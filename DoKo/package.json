@@ -1,0 +1,15 @@
+{
+  "name": "doko-stammtisch",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Online-Doppelkopf für den Freundeskreis – Cloudflare Workers + Durable Objects",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "test": "node test/engine.test.js && node test/server.test.js"
+  },
+  "devDependencies": {
+    "wrangler": "^4.0.0"
+  }
+}

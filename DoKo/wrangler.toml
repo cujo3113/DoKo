@@ -1,0 +1,19 @@
+# Konfiguration für Cloudflare Workers (https://developers.cloudflare.com/workers/wrangler/configuration/)
+name = "doko-stammtisch"
+main = "src/worker.js"
+compatibility_date = "2025-06-01"
+
+# Die Spielseite: alles im Ordner public/ wird als statische Datei ausgeliefert (kostenlos, unbegrenzt).
+[assets]
+directory = "./public"
+binding = "ASSETS"
+
+# Ein Durable Object pro Tisch (hält Spielstand und Verbindungen).
+[[durable_objects.bindings]]
+name = "TABLES"
+class_name = "Table"
+
+# Im kostenlosen Plan sind nur Durable Objects mit SQLite-Speicher erlaubt.
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Table"]
