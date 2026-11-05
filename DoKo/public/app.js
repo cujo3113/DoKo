@@ -33,8 +33,13 @@ import { CARD_DEFS, CARD_BODY } from './cards.js';
   let confirmReset = false;
 
   function nick() {
-    const el = $('nick'); if (el && el.value.trim()) return el.value.trim();
-    return store.get('doko-nick') || 'Gast';
+    for (const id of ['nick', 'nick2']) { const el = $(id); if (el && el.value.trim()) return el.value.trim().slice(0, 20); }
+    return store.get('doko-nick') || '';
+  }
+  function askName() {
+    toast('Bitte zuerst deinen Namen eintragen.');
+    const el = $('nick') || $('nick2');
+    if (el) { el.focus(); el.scrollIntoView({ block: 'center', behavior: 'smooth' }); }
   }
   function saveNick(v) { store.set('doko-nick', v); }
 
@@ -179,6 +184,54 @@ import { CARD_DEFS, CARD_BODY } from './cards.js';
   $('soundbtn').addEventListener('click', () => { Sound.setOn(!Sound.isOn()); renderSoundBtn(); if (Sound.isOn()) setTimeout(() => Sound.play('card'), 30); });
   renderSoundBtn();
 
+  // ---------- Seitenleiste und Vollbild ----------
+  // Kopfzeilenhöhe messen, damit der Tisch genau den restlichen Bildschirm füllt
+  const hdr = document.querySelector('header.top');
+  const setHdr = () => document.documentElement.style.setProperty('--hdr', Math.ceil(hdr.getBoundingClientRect().height) + 'px');
+  if (window.ResizeObserver) new ResizeObserver(setHdr).observe(hdr);
+  setHdr(); addEventListener('resize', setHdr);
+  const appEl = document.querySelector('.app');
+  const ICON = {
+    side: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16"/></svg>',
+    fs: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>',
+    fsx: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5"/></svg>',
+  };
+  function renderSideBtn() {
+    const hidden = appEl.classList.contains('noside');
+    const b = $('sidebtn');
+    b.setAttribute('aria-pressed', String(!hidden));
+    b.innerHTML = `${ICON.side}${hidden ? 'Spielzettel zeigen' : 'Spielzettel ausblenden'}`;
+  }
+  if (store.get('doko-side') === 'off') appEl.classList.add('noside');
+  $('sidebtn').addEventListener('click', () => {
+    appEl.classList.toggle('noside');
+    store.set('doko-side', appEl.classList.contains('noside') ? 'off' : 'on');
+    renderSideBtn();
+  });
+  renderSideBtn();
+
+  const fsOk = document.fullscreenEnabled || document.webkitFullscreenEnabled;
+  function renderFsBtn() {
+    const b = $('fsbtn');
+    const on = !!(document.fullscreenElement || document.webkitFullscreenElement);
+    b.hidden = !fsOk;
+    b.innerHTML = on ? `${ICON.fsx}Vollbild beenden` : `${ICON.fs}Vollbild`;
+  }
+  $('fsbtn').addEventListener('click', () => {
+    const el = document.documentElement;
+    const on = document.fullscreenElement || document.webkitFullscreenElement;
+    try {
+      if (on) (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+      else {
+        const r = (el.requestFullscreen || el.webkitRequestFullscreen).call(el);
+        if (r && r.catch) r.catch(() => toast('Vollbild ist in diesem Browser nicht möglich.'));
+      }
+    } catch (e) { toast('Vollbild ist in diesem Browser nicht möglich.'); }
+  });
+  document.addEventListener('fullscreenchange', renderFsBtn);
+  document.addEventListener('webkitfullscreenchange', renderFsBtn);
+  renderFsBtn();
+
   let prevSnap = null;
   function soundsFor(st) {
     const g = st && st.game;
@@ -303,7 +356,7 @@ import { CARD_DEFS, CARD_BODY } from './cards.js';
     return `<div class="panel">
       <h2>Wer spielt mit?</h2>
       <p class="muted">${online ? 'Schick deinen Freunden den Link zu dieser Seite. Wer sie öffnet, sitzt am selben Tisch. Freie Plätze kannst du mit Bots auffüllen.' : 'Übungsmodus: Du spielst allein gegen drei Bots, nur in diesem Fenster.'}</p>
-      <label class="nick">Dein Name <input id="nick" maxlength="20" value="${esc(nick())}"></label>
+      <label class="nick" for="nick"><strong>Dein Name</strong> <input id="nick" maxlength="20" autocomplete="nickname" placeholder="Name eintragen" value="${esc(nick())}"></label>
       <div class="seatlist">${boxes}</div>
       <div class="btnrow">
         <button class="btn" data-act="fillBots"${full || readOnly ? ' disabled' : ''}>Freie Plätze mit Bots füllen</button>
@@ -388,7 +441,7 @@ import { CARD_DEFS, CARD_BODY } from './cards.js';
     const sorter = g && g.phase === 'vorbehalt' && g.hands[m].length
       ? `<span class="sortbar" role="group" aria-label="Karten vorsortieren">Sortieren: ${SORTS.map(([k, l]) => `<button data-sort="${k}" aria-pressed="${sortKind() === k}">${l}</button>`).join('')}</span>` : '';
     const myStat = g && (g.phase === 'play' || g.phase === 'done') ? `<span class="seat-meta">${statHTML(m)}</span>` : '';
-    return `<div class="mebar${turn ? ' turn' : ''}"><span class="seat-name">${esc(seatName(m))} ${geber} ${pchip} ${mine}</span>${myStat}<span class="hint">${hint}</span>${sorter}${ann ? `<span class="annrow" aria-label="Ansagen">${ann}</span>` : ''}</div>`;
+    return `<div class="mebar${turn ? ' turn' : ''}"><span class="seat-name">${esc(seatName(m))} <button class="mini" data-act="editname" aria-label="Namen ändern" title="Namen ändern">✎</button> ${geber} ${pchip} ${mine}</span>${myStat}<span class="hint">${hint}</span>${sorter}${ann ? `<span class="annrow" aria-label="Ansagen">${ann}</span>` : ''}</div>`;
   }
 
   // Vorsortieren: nur die Ansicht, keine Ansage
@@ -471,6 +524,7 @@ import { CARD_DEFS, CARD_BODY } from './cards.js';
     const reset = confirmReset
       ? `<span class="notice">Punkte und Spielstand löschen?</span><button class="sidebtn danger" data-act="reset">Ja, neue Partie</button><button class="sidebtn" data-act="noreset">Abbrechen</button>`
       : `<button class="sidebtn" data-act="askreset"${readOnly ? ' disabled' : ''}>Neue Partie</button>`;
+    const n2 = $('nick2'); const keep2 = n2 ? { v: n2.value, f: document.activeElement === n2 } : null;
     side.innerHTML = `
       <div class="box"><h3>Dieses Spiel</h3>${info}
         <div class="btnrow"><button class="sidebtn" data-act="bock"${readOnly || !state.seats.some((s) => s) ? ' disabled' : ''}>Bockrunde ansagen</button>${m >= 0 && state.phase === 'game' ? `<button class="sidebtn" data-leave="${m}">Platz an Bot abgeben</button>` : ''}</div></div>
@@ -489,9 +543,12 @@ import { CARD_DEFS, CARD_BODY } from './cards.js';
         <li>Abrechnung: Gewonnen 1, gegen die Alten 1, unter 90/60/30/schwarz je 1, Re und Kontra je 2, jede Absage 1. Erreicht keine Partei ihr Ziel, zählen nur die Sonderpunkte.</li>
         <li>Bockrunde: Die nächsten 4 Spiele zählen doppelt, mehrere Bockrunden stapeln sich. Vor der ersten Karte angesagt, zählt schon das laufende Spiel.</li>
       </ul></details></div>
-      <div class="box"><h3>Tisch</h3><div class="btnrow">${reset}</div>
+      <div class="box"><h3>Tisch</h3>
+        <form class="btnrow" id="nameform"><label class="namelabel" for="nick2">Dein Name</label><input id="nick2" class="nameinput" maxlength="20" autocomplete="nickname" placeholder="Name eintragen" value="${esc(m >= 0 ? seatName(m) : nick())}"><button class="sidebtn" type="submit">${m >= 0 ? 'Name ändern' : 'Merken'}</button></form>
+        <div class="btnrow">${reset}</div>
         ${online ? `<div class="btnrow"><button class="sidebtn" data-act="copylink">Tisch-Link kopieren</button></div><p class="notice" id="linktext">${esc(location.origin + location.pathname + (TABLE === 'stammtisch' ? '' : '?tisch=' + TABLE))}</p>` : ''}
         <p class="notice">${online ? 'Der Spielstand liegt auf dem Server. Jeder bekommt nur seine eigenen Karten zu sehen.' : 'Übungsmodus: Die Partie läuft nur in diesem Fenster.'}</p></div>`;
+    if (keep2) { const e = $('nick2'); e.value = keep2.v; if (keep2.f) e.focus(); }
     const z = $('zettel'); if (z) z.scrollTop = z.scrollHeight;
   }
 
@@ -510,8 +567,8 @@ import { CARD_DEFS, CARD_BODY } from './cards.js';
     const d = b.dataset;
     const g = state && state.game;
     const m = mySeat();
-    if (d.sit !== undefined) { const n = nick(); saveNick(n); return act({ t: 'sit', seat: +d.sit, name: n }); }
-    if (d.takeover !== undefined) { const n = nick(); saveNick(n); return act({ t: 'takeover', seat: +d.takeover, name: n }); }
+    if (d.sit !== undefined) { const n = nick(); if (!n) return askName(); saveNick(n); return act({ t: 'sit', seat: +d.sit, name: n }); }
+    if (d.takeover !== undefined) { const n = nick(); if (!n) return askName(); saveNick(n); return act({ t: 'takeover', seat: +d.takeover, name: n }); }
     if (d.leave !== undefined) return act({ t: 'leave', seat: +d.leave });
     if (d.kick !== undefined) return act({ t: 'kick', seat: +d.kick });
     if (d.sort) { sortPref = { game: dealSig(), kind: d.sort }; return renderFelt(); }
@@ -534,6 +591,7 @@ import { CARD_DEFS, CARD_BODY } from './cards.js';
       case 'bock': return act({ t: 'bock' });
       case 'armutGive': return act({ t: 'armutGive', cards: selected.slice() });
       case 'armutReturn': return act({ t: 'armutReturn', cards: selected.slice() });
+      case 'editname': { const e = $('nick2'); if (e) { e.focus(); e.select(); e.scrollIntoView({ block: 'center', behavior: 'smooth' }); } return; }
       case 'askreset': confirmReset = true; return renderSide();
       case 'noreset': confirmReset = false; return renderSide();
       case 'reset': confirmReset = false; return act({ t: 'reset', keepSeats: true });
@@ -545,6 +603,17 @@ import { CARD_DEFS, CARD_BODY } from './cards.js';
       }
     }
   });
+  document.addEventListener('submit', (ev) => {
+    if (ev.target.id !== 'nameform') return;
+    ev.preventDefault();
+    const n = $('nick2').value.trim().slice(0, 20);
+    if (!n) return askName();
+    saveNick(n);
+    const l = $('nick'); if (l) l.value = n;
+    if (mySeat() >= 0) { if (act({ t: 'rename', name: n })) toast(`Du heißt jetzt ${n}.`); }
+    else toast('Name gemerkt. Setz dich jetzt auf einen freien Platz.');
+    $('nick2').blur();
+  });
   document.addEventListener('change', (ev) => {
     if (ev.target.id !== 'nick') return;
     const n = ev.target.value.trim(); if (!n) return;
@@ -555,7 +624,7 @@ import { CARD_DEFS, CARD_BODY } from './cards.js';
   // ---------- Start ----------
   function startLocal() {
     let s = E.newTable();
-    s = E.dispatch(s, me.id, { t: 'sit', seat: 0, name: nick() === 'Gast' ? 'Du' : nick() }).state;
+    s = E.dispatch(s, me.id, { t: 'sit', seat: 0, name: nick() || 'Du' }).state;
     s = E.dispatch(s, me.id, { t: 'fillBots' }).state;
     s = E.dispatch(s, me.id, { t: 'start' }).state;
     full = s; state = E.viewFor(full, me.id);

@@ -6,6 +6,12 @@
 <title>Doko-Stammtisch</title>
 <meta name="description" content="Online-Doppelkopf für unseren Stammtisch">
 <meta name="theme-color" content="#1f5a43">
+<link rel="manifest" href="./manifest.webmanifest">
+<link rel="apple-touch-icon" href="./apple-touch-icon.png">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Doko">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='5' y='3' width='20' height='27' rx='3' fill='%23fff' stroke='%23111' stroke-width='1.5'/%3E%3Cpath d='M15 9c-3 4-6 6-6 9a3 3 0 0 0 6 1 3 3 0 0 0 6-1c0-3-3-5-6-9z' fill='%231b7a35'/%3E%3C/svg%3E">
 <style>
 /* Schriften liegen lokal (keine Verbindung zu Google), Lizenz: SIL Open Font License */
@@ -111,13 +117,7 @@ header.top .sub { color: var(--muted); font-size: .95rem; }
 .mini { font-size: .78rem; padding: 2px 8px; border-radius: 8px; border: 1px solid var(--felt-muted); background: transparent; color: var(--felt-ink); }
 
 .mid { grid-area: mid; min-height: 230px; display: grid; align-items: center; min-width: 0; }
-.trick { position: relative; height: 280px; }
-.trick .slot { margin-top: -12px; }
 .trick .slot { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); }
-.trick .slot.p0 { margin-top: 52px; }
-.trick .slot.p2 { margin-top: -76px; }
-.trick .slot.p1 { margin-left: -86px; }
-.trick .slot.p3 { margin-left: 86px; }
 .trick .slot.win .card { box-shadow: 0 0 0 3px var(--brass), 0 6px 14px rgba(0,0,0,.35); }
 .trick-caption { position: absolute; left: 0; right: 0; bottom: 0; text-align: center; font-size: .82rem; color: var(--felt-muted); }
 .panel { background: rgba(0,0,0,.22); border-radius: 14px; padding: 14px 16px; display: grid; gap: 10px; }
@@ -165,13 +165,10 @@ label.nick input { font: inherit; padding: 6px 10px; border-radius: 8px; border:
 .annbtn.contra { background: var(--contra); color: #fff; }
 
 .hand { grid-area: hand; display: flex; justify-content: safe center; flex-wrap: nowrap; padding: 6px 4px 2px; min-height: 120px; overflow-x: auto; }
-.hand .card + .card { margin-left: -20px; }
-@media (max-width: 760px) { .hand .card + .card { margin-left: -26px; } }
-@media (max-width: 420px) { .hand .card + .card { margin-left: -32px; } }
 
 /* Karten: klassisches Bild (gemeinfrei, Adrian Kennard), Vierfarbenblatt, deutsche Eckzeichen */
 .card {
-  --w: 84px; display: inline-block; vertical-align: top; width: var(--w); height: calc(var(--w) * 1.4); flex: none;
+  display: inline-block; vertical-align: top; width: var(--w); height: calc(var(--w) * 1.4); flex: none;
   border-radius: calc(var(--w) * .06); border: 1px solid var(--card-edge); background: var(--card); color: var(--card-black);
   position: relative; padding: 0; overflow: hidden;
   box-shadow: 0 1px 0 rgba(255,255,255,.6) inset, 0 3px 8px rgba(0,0,0,.45);
@@ -187,7 +184,6 @@ label.nick input { font: inherit; padding: 6px 10px; border-radius: 8px; border:
 .hand .card.dim { filter: brightness(.72) saturate(.75); cursor: not-allowed; }
 .hand .card.sel { transform: translateY(-14px); box-shadow: 0 0 0 3px var(--brass), 0 6px 14px rgba(0,0,0,.45); z-index: 2; }
 .hand button.card:disabled { cursor: default; }
-@media (max-width: 760px) { .card { --w: 68px; } .trick .slot.p1 { margin-left: -70px; } .trick .slot.p3 { margin-left: 70px; } }
 .card.trump::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 9%; background: linear-gradient(var(--brass), #a87a20); box-shadow: 0 -1px 0 rgba(0,0,0,.35); }
 .card.trump::before { content: "Trumpf"; position: absolute; left: 0; right: 0; bottom: 0; height: 9%; z-index: 1; display: grid; place-items: center; font: 700 calc(var(--w) * .095)/1 var(--font-body); letter-spacing: .06em; text-transform: uppercase; color: var(--brass-ink); }
 @media (max-width: 620px) {
@@ -195,7 +191,7 @@ label.nick input { font: inherit; padding: 6px 10px; border-radius: 8px; border:
   .seat.pos-1, .seat.pos-3 { align-self: start; }
   .seat.pos-2 { min-width: 0; justify-self: stretch; }
 }
-@media (max-width: 420px) { .card { --w: 58px; } .hand .card + .card { margin-left: -29px; } .felt { padding: 10px; gap: 8px; } .seat { padding: 6px 7px; } .trick .slot.p1 { margin-left: -62px; } .trick .slot.p3 { margin-left: 62px; } }
+@media (max-width: 420px) { .felt { padding: 10px; gap: 8px; } .seat { padding: 6px 7px; } }
 @media (prefers-reduced-motion: reduce) { .card { transition: none; } }
 
 /* Ergebnis */
@@ -247,7 +243,84 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; }
 .dot.wait { background: var(--brass); animation: blink 1s ease-in-out infinite; }
 @keyframes blink { 50% { opacity: .3; } }
 @media (prefers-reduced-motion: reduce) { .dot.wait { animation: none; } }
+.namelabel { font-size: .88rem; color: var(--muted); }
+.nameinput { font: inherit; padding: 5px 10px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); width: 11em; max-width: 100%; }
+#nick::placeholder, .nameinput::placeholder { color: var(--muted); }
 #linktext { overflow-wrap: anywhere; user-select: all; }
+
+/* ===== Responsives Layout: Der Tisch füllt den Bildschirm, die Karten wachsen mit =====
+   --w (Kartenbreite) richtet sich nach der Breite des Tisches (cqi) und der Bildschirmhöhe (vh).
+   --ov ist die Überlappung der Handkarten, damit immer alle 10 Karten in eine Reihe passen. */
+html { font-size: clamp(15px, .45vw + 9.5px, 18px); }
+body { font-size: 1rem; }
+.app { max-width: none; grid-template-rows: auto 1fr; }
+header.top { align-items: center; }
+.tools { display: inline-flex; gap: 6px; flex-wrap: wrap; }
+.layout { grid-template-columns: minmax(0, 1fr) clamp(290px, 23vw, 380px); align-items: start; }
+.app.noside .layout { grid-template-columns: minmax(0, 1fr); }
+.app.noside aside { display: none; }
+aside { position: sticky; top: max(12px, env(safe-area-inset-top, 0px)); max-height: calc(100dvh - 24px); overflow: auto; align-content: start; }
+.felt {
+  container-type: inline-size;
+  min-height: calc(100dvh - var(--hdr, 50px) - var(--chrome, 56px));
+  grid-template-rows: auto minmax(0, 1fr) auto auto;
+  --w: clamp(56px, min(11.6cqi, calc((100dvh - 340px) / 4.2)), 136px);
+  --ov: .24;
+}
+.card { width: var(--w); height: calc(var(--w) * 1.4); }
+.mid { min-height: 0; }
+.trick { position: relative; height: calc(var(--w) * 2.8 + 36px); }
+.trick .slot { margin-top: -14px; }
+.trick .slot.p0 { margin-top: calc(var(--w) * .7 - 14px); }
+.trick .slot.p2 { margin-top: calc(var(--w) * -.7 - 14px); }
+.trick .slot.p1 { margin-left: calc(var(--w) * -1.08); }
+.trick .slot.p3 { margin-left: calc(var(--w) * 1.08); }
+.hand { min-height: calc(var(--w) * 1.4 + 22px); padding: 16px 4px 4px; align-items: flex-end; }
+.hand .card + .card { margin-left: calc(var(--w) * var(--ov) * -1); }
+.panel { max-width: 640px; justify-self: center; width: 100%; }
+
+/* Tablet und kleiner Laptop: Seitenleiste unter den Tisch, Tisch in voller Breite */
+@media (max-width: 1199px) {
+  .layout { grid-template-columns: minmax(0, 1fr); }
+  aside { position: static; max-height: none; overflow: visible; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); align-items: start; }
+  .felt { --w: clamp(56px, min(13.5cqi, calc((100dvh - 370px) / 4.2)), 132px); --ov: .34; }
+  #sidebtn { display: none; }
+}
+@media (max-width: 760px) { .felt { --w: clamp(48px, min(16cqi, calc((100dvh - 380px) / 4.2)), 104px); --ov: .45; } }
+/* Smartphone */
+@media (max-width: 520px) {
+  body { padding-block: 8px 16px; }
+  header.top { gap: 4px 10px; }
+  header.top h1 { font-size: 1.35rem; }
+  header.top .sub { display: none; }
+  .mode { margin-left: 0; width: 100%; justify-content: space-between; }
+  .felt { --w: clamp(44px, min(19cqi, calc((100dvh - 470px) / 4.2)), 92px); --ov: .55; padding: 8px; border-radius: 16px; }
+  :root { --chrome: 38px; }
+  .mebar { padding: 6px 8px; }
+}
+/* Querformat am Handy: wenig Höhe */
+@media (max-height: 520px) and (orientation: landscape) {
+  body { padding-block: 6px 10px; }
+  header.top h1 { font-size: 1.15rem; }
+  header.top .sub { display: none; }
+  .felt { --w: clamp(40px, min(9cqi, 13vh), 80px); --ov: .3; min-height: 0; padding: 8px; gap: 6px; }
+  .trick { height: calc(var(--w) * 2.6 + 30px); }
+  .seat { padding: 4px 8px; }
+  .mebar { padding: 4px 8px; }
+}
+
+/* Touch-Bedienung: größere Ziele, kein Zoom per Doppeltipp, kein versehentliches Markieren */
+button, .card, .stat { touch-action: manipulation; }
+.felt { -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent; }
+.felt input { -webkit-user-select: text; user-select: text; }
+@media (pointer: coarse) {
+  .btn, .sidebtn, .soundbtn { min-height: 42px; }
+  .annbtn { padding: 9px 15px; font-size: .9rem; }
+  .sortbar button { padding: 6px 12px; }
+  .mini { padding: 5px 10px; min-height: 32px; }
+  .hand .card.playable { transform: translateY(-8px); }
+}
+@media (hover: none) { .hand .card.playable:hover { transform: translateY(-8px); } }
 </style>
 </head>
 <body>
@@ -255,7 +328,7 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; }
   <header class="top">
     <h1>Doko-Stammtisch</h1>
     <span class="sub">Doppelkopf ohne Neunen · 10 Karten · eure Hausregeln</span>
-    <span class="mode"><span id="mode"><span class="dot"></span> verbinde …</span><button class="soundbtn" id="soundbtn" aria-pressed="true"></button></span>
+    <span class="mode"><span id="mode"><span class="dot"></span> verbinde …</span><span class="tools"><button class="soundbtn" id="sidebtn" aria-pressed="true">Seitenleiste</button><button class="soundbtn" id="fsbtn" hidden>Vollbild</button><button class="soundbtn" id="soundbtn" aria-pressed="true"></button></span></span>
   </header>
   <div class="layout">
     <section class="felt" id="felt" aria-label="Spieltisch"></section>
