@@ -1,0 +1,3 @@
+# Cloudflare: Browser sollen Seite und Skripte bei jedem Laden kurz auf Aktualität prüfen.
+/*
+  Cache-Control: no-cache

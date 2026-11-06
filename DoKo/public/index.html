@@ -224,6 +224,8 @@ aside { display: grid; gap: 14px; min-width: 0; }
 .zettel td .d { display: block; font-family: var(--font-body); font-size: .7rem; color: var(--muted); }
 .zettel td.kind { font-family: var(--font-body); font-size: .76rem; color: var(--muted); }
 .zettel tr.bock td.kind::after { content: " · Bock"; color: var(--brass); font-weight: 700; }
+.zettel tfoot td { position: sticky; bottom: 0; background: var(--paper); border-top: 2px solid var(--paper-ink); border-bottom: 0; font-family: var(--font-body); font-weight: 700; font-size: .85rem; }
+.zettel tfoot td.kind { font-weight: 600; }
 .zettel .empty { padding: 14px; color: var(--muted); font-size: .9rem; }
 .log { margin: 0; padding: 0; list-style: none; display: grid; gap: 4px; font-size: .88rem; color: var(--muted); }
 .log li:first-child { color: var(--ink); }
@@ -336,6 +338,6 @@ button, .card, .stat { touch-action: manipulation; }
   </div>
 </div>
 <div class="toast" id="toast" hidden></div>
-<script type="module" src="./app.js"></script>
+<script type="module" src="./app.js?v=9"></script>
 </body>
 </html>

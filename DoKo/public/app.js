@@ -1,5 +1,6 @@
-import E from './engine.js';
-import { CARD_DEFS, CARD_BODY } from './cards.js';
+// Versionsnummer an den Dateinamen, damit Browser nie alte und neue Dateien mischen
+import E from './engine.js?v=9';
+import { CARD_DEFS, CARD_BODY } from './cards.js?v=9';
 
   const $ = (id) => document.getElementById(id);
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -404,6 +405,14 @@ import { CARD_DEFS, CARD_BODY } from './cards.js';
 
   function resultHTML(g) {
     const r = g.result;
+    if (!r || !Array.isArray(r.payers)) {
+      // Spiel wurde noch mit einer älteren Version der App abgerechnet
+      const pts = (r && r.points) || [0, 0, 0, 0];
+      return `<div class="panel"><div class="result-head"><h2>Spiel beendet</h2><span class="muted">${esc((r && r.label) || '')}</span></div>
+        <p class="muted">Dieses Spiel wurde noch nach der alten Zählung abgerechnet. Ab dem nächsten Spiel gilt die neue Zählung.</p>
+        <div class="scores">${[0, 1, 2, 3].map((s) => `<div><span>${esc(seatName(s))}</span><b>${pts[s] || '–'}</b></div>`).join('')}</div>
+        <div class="btnrow"><button class="btn primary" data-act="next"${readOnly ? ' disabled' : ''}>Nächstes Spiel</button><button class="btn" data-act="bock"${readOnly ? ' disabled' : ''}>Bockrunde ansagen</button></div></div>`;
+    }
     const reNames = g.re.map(seatName).join(' & ');
     const coNames = [0, 1, 2, 3].filter((s) => !g.re.includes(s)).map(seatName).join(' & ');
     const head = r.winner === 're' ? 'Re gewinnt' : r.winner === 'contra' ? 'Kontra gewinnt' : 'Keiner gewinnt';
@@ -574,7 +583,18 @@ import { CARD_DEFS, CARD_BODY } from './cards.js';
     else el.innerHTML = '<span class="dot wait"></span> verbinde …';
   }
 
-  function render() { renderFelt(); renderSide(); }
+  function showError(where, e) {
+    console.error(where, e);
+    const msg = `<div class="mid"><div class="panel"><h2>Anzeige fehlgeschlagen</h2>
+      <p class="muted">Beim Darstellen ${where === 'felt' ? 'des Tisches' : 'der Seitenleiste'} ist ein Fehler aufgetreten. Lade die Seite neu. Hilft das nicht, schick diese Meldung an den Gastgeber:</p>
+      <p class="muted"><code>${esc(String(e && e.message || e))}</code></p>
+      <div class="btnrow"><button class="btn primary" type="button" onclick="location.reload()">Seite neu laden</button></div></div></div>`;
+    if (where === 'felt') $('felt').innerHTML = msg;
+  }
+  function render() {
+    try { renderFelt(); } catch (e) { showError('felt', e); }
+    try { renderSide(); } catch (e) { showError('side', e); }
+  }
 
   // ---------- Eingaben ----------
   document.addEventListener('click', (ev) => {
