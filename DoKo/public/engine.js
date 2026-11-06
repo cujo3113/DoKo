@@ -1001,7 +1001,7 @@ const DokoEngine = (() => {
   }
   function botDelay(state) {
     const g = state.game;
-    return g && g.current.length === 0 && g.tricks.length ? 5200 : 850; // fertiger Stich bleibt 5 Sekunden liegen
+    return g && g.current.length === 0 && g.tricks.length ? 2200 : 850; // fertiger Stich bleibt 2 Sekunden liegen
   }
 
   function totals(state) {

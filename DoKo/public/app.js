@@ -1,6 +1,6 @@
 // Versionsnummer an den Dateinamen, damit Browser nie alte und neue Dateien mischen
-import E from './engine.js?v=17';
-import { CARD_DEFS, CARD_BODY } from './cards.js?v=17';
+import E from './engine.js?v=18';
+import { CARD_DEFS, CARD_BODY } from './cards.js?v=18';
 
   const $ = (id) => document.getElementById(id);
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -33,7 +33,10 @@ import { CARD_DEFS, CARD_BODY } from './cards.js?v=17';
   let selKey = '';
   let pendingSolo = null;   // Solo gewählt, aber noch nicht bestätigt
   let trickClearAt = 0;     // bis wann der fertige Stich noch liegen bleibt
-  const TRICK_SHOW_MS = 5000; // fertiger Stich bleibt 5 Sekunden liegen
+  const TRICK_SHOW_MS = 2000;      // fertiger Stich bleibt 2 Sekunden liegen …
+  const LAST_TRICK_SHOW_MS = 5000; // … der 10. Stich 5 Sekunden, erst dann kommt die Abrechnung
+  let sideHold = null;             // Seitenleiste zeigt bis dahin noch den Stand vor dem letzten Stich
+  let prevStateObj = null;
   let showLast = false;     // letzten Stich ansehen
   let confirmReset = false;
 
@@ -341,14 +344,16 @@ import { CARD_DEFS, CARD_BODY } from './cards.js?v=17';
     const m = mySeat();
     if (snap.deal !== p.deal) { Sound.play('shuffle'); return; }
     if (snap.tricks > p.tricks) {
-      Sound.play('card'); setTimeout(() => Sound.play('collect'), TRICK_SHOW_MS - 250);
-      // fertigen Stich kurz liegen lassen, dann automatisch abräumen
-      trickClearAt = Date.now() + TRICK_SHOW_MS; showLast = false;
-      clearTimeout(soundsFor.t); soundsFor.t = setTimeout(() => { try { renderFelt(); } catch (e) { showError('felt', e); } }, TRICK_SHOW_MS + 50);
+      const ms = snap.tricks >= 10 ? LAST_TRICK_SHOW_MS : TRICK_SHOW_MS;
+      Sound.play('card'); setTimeout(() => Sound.play('collect'), ms - 250);
+      // fertigen Stich liegen lassen, dann automatisch abräumen (beim 10. Stich danach die Abrechnung zeigen)
+      trickClearAt = Date.now() + ms; showLast = false;
+      if (snap.tricks >= 10) sideHold = prevStateObj;
+      clearTimeout(soundsFor.t); soundsFor.t = setTimeout(() => { sideHold = null; render(); }, ms + 50);
     }
     else if (snap.cur > p.cur) Sound.play('card');
     if (snap.ann > p.ann) setTimeout(() => Sound.play('knock'), 60);
-    if (snap.phase === 'done' && p.phase !== 'done') setTimeout(() => Sound.play('end'), 900);
+    if (snap.phase === 'done' && p.phase !== 'done') setTimeout(() => Sound.play('end'), LAST_TRICK_SHOW_MS + 100);
     else if (m >= 0 && snap.turn === m && (snap.turn !== p.turn || snap.phase !== p.phase) && snap.phase !== 'done' && !state.seats[m].bot) setTimeout(() => Sound.play('turn'), snap.tricks > p.tricks ? 900 : 250);
   }
 
@@ -359,6 +364,7 @@ import { CARD_DEFS, CARD_BODY } from './cards.js?v=17';
     if (k !== selKey) { selected = []; selKey = k; pendingSolo = null; }
     render();
     scheduleBots();
+    prevStateObj = state;
   }
 
   // ---------- Rendering ----------
@@ -685,7 +691,8 @@ import { CARD_DEFS, CARD_BODY } from './cards.js?v=17';
     if (state.phase === 'lobby' || !g) mid = lobbyHTML();
     else if (g.phase === 'vorbehalt') mid = vorbehaltHTML(g);
     else if (g.phase.startsWith('armut')) mid = armutHTML(g);
-    else if (g.phase === 'done') mid = resultHTML(g);
+    else if (g.phase === 'done' && Date.now() >= trickClearAt) mid = resultHTML(g);
+    else if (g.phase === 'done') mid = trickHTML(g); // 10. Stich bleibt noch liegen
     else mid = trickHTML(g);
     const others = [1, 2, 3].map((p) => { const s = (base() + p) % 4; return seatTag(s, p); }).join('');
     const nickEl = $('nick'); const keepNick = nickEl ? nickEl.value : null;
@@ -694,6 +701,15 @@ import { CARD_DEFS, CARD_BODY } from './cards.js?v=17';
   }
 
   function renderSide() {
+    if (sideHold && Date.now() < trickClearAt) {
+      // während der 10. Stich liegt: Seitenleiste noch ohne Ergebnis
+      const real = state; state = sideHold;
+      try { renderSideNow(); } finally { state = real; }
+      return;
+    }
+    renderSideNow();
+  }
+  function renderSideNow() {
     const side = $('side');
     if (!state) { side.innerHTML = ''; return; }
     const g = state.game;
