@@ -114,6 +114,14 @@ header.top .sub { color: var(--muted); font-size: .95rem; }
 .chip.geber { background: #f4f1e8; color: #1a1a1a; display: inline-flex; align-items: center; gap: 4px; }
 .chip.geber svg { width: 12px; height: 12px; }
 .chip.lead { background: transparent; box-shadow: inset 0 0 0 1.5px var(--brass); color: var(--brass); display: inline-flex; align-items: center; gap: 3px; }
+.chip { display: inline-flex; align-items: center; gap: 4px; }
+.chip .ico { width: 13px; height: 13px; flex: none; }
+.banner .gtype { display: inline-flex; align-items: center; gap: 8px; }
+.banner .gtype .ico { width: 1.15em; height: 1.15em; }
+.chip.hz { background: #b8486f; color: #fff; }
+.chip.hzp { background: transparent; box-shadow: inset 0 0 0 1.5px #e58aa9; color: #f3b5ca; }
+.chip.armutgive { background: #a8661c; color: #fff; }
+.chip.armuttake { background: transparent; box-shadow: inset 0 0 0 1.5px #e0a35a; color: #f0c48a; }
 .chip.zug { background: var(--brass); color: var(--brass-ink); animation: zug 1.4s ease-in-out infinite; }
 @keyframes zug { 50% { box-shadow: 0 0 0 4px rgba(217,172,82,.35); } }
 @media (prefers-reduced-motion: reduce) { .chip.zug { animation: none; } }
@@ -364,6 +372,6 @@ button, .card, .stat { touch-action: manipulation; }
   </div>
 </div>
 <div class="toast" id="toast" hidden></div>
-<script type="module" src="./app.js?v=13"></script>
+<script type="module" src="./app.js?v=16"></script>
 </body>
 </html>
