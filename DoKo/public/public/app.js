@@ -1,6 +1,6 @@
 // Versionsnummer an den Dateinamen, damit Browser nie alte und neue Dateien mischen
-import E from './engine.js?v=13';
-import { CARD_DEFS, CARD_BODY } from './cards.js?v=13';
+import E from './engine.js?v=17';
+import { CARD_DEFS, CARD_BODY } from './cards.js?v=17';
 
   const $ = (id) => document.getElementById(id);
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -33,6 +33,7 @@ import { CARD_DEFS, CARD_BODY } from './cards.js?v=13';
   let selKey = '';
   let pendingSolo = null;   // Solo gewählt, aber noch nicht bestätigt
   let trickClearAt = 0;     // bis wann der fertige Stich noch liegen bleibt
+  const TRICK_SHOW_MS = 5000; // fertiger Stich bleibt 5 Sekunden liegen
   let showLast = false;     // letzten Stich ansehen
   let confirmReset = false;
 
@@ -47,9 +48,9 @@ import { CARD_DEFS, CARD_BODY } from './cards.js?v=13';
   }
   function saveNick(v) { store.set('doko-nick', v); }
 
-  function toast(msg) {
+  function toast(msg, ms = 3200) {
     const t = $('toast'); t.textContent = msg; t.hidden = false;
-    clearTimeout(toast.tm); toast.tm = setTimeout(() => (t.hidden = true), 3200);
+    clearTimeout(toast.tm); toast.tm = setTimeout(() => (t.hidden = true), ms);
   }
 
   const mySeat = () => (state ? state.me : -1);
@@ -324,18 +325,26 @@ import { CARD_DEFS, CARD_BODY } from './cards.js?v=13';
   renderFsBtn();
 
   let prevSnap = null;
+  // Trumpfabgabe: Nachricht an alle, sobald die Karten zurückgegeben wurden
+  function p0Armut(p, snap, g) { return p && snap && p.deal === snap.deal && p.phase === 'armut_return' && snap.phase === 'play' && g.armut; }
+  function trumpsText(n) { return n === 0 ? 'kein Trumpf' : n === 1 ? '1 Trumpf' : `${n} Trümpfe`; }
+  function armutReturnText(g) {
+    const a = g.armut;
+    return `Trumpfabgabe: ${seatName(a.taker)} gibt ${seatName(a.poor)} drei Karten zurück, davon ${trumpsText(a.returnedTrumps || 0)}.`;
+  }
   function soundsFor(st) {
     const g = st && st.game;
     const snap = g ? { deal: g.dealId, cur: g.current.length, tricks: g.tricks.length, ann: g.ann.hist.length, phase: g.phase, turn: g.turn } : null;
+    if (p0Armut(prevSnap, snap, g)) toast(armutReturnText(g), 7000);
     const p = prevSnap; prevSnap = snap;
     if (!p || !snap) return;
     const m = mySeat();
     if (snap.deal !== p.deal) { Sound.play('shuffle'); return; }
     if (snap.tricks > p.tricks) {
-      Sound.play('card'); setTimeout(() => Sound.play('collect'), 1500);
+      Sound.play('card'); setTimeout(() => Sound.play('collect'), TRICK_SHOW_MS - 250);
       // fertigen Stich kurz liegen lassen, dann automatisch abräumen
-      trickClearAt = Date.now() + 1700; showLast = false;
-      clearTimeout(soundsFor.t); soundsFor.t = setTimeout(() => { try { renderFelt(); } catch (e) { showError('felt', e); } }, 1750);
+      trickClearAt = Date.now() + TRICK_SHOW_MS; showLast = false;
+      clearTimeout(soundsFor.t); soundsFor.t = setTimeout(() => { try { renderFelt(); } catch (e) { showError('felt', e); } }, TRICK_SHOW_MS + 50);
     }
     else if (snap.cur > p.cur) Sound.play('card');
     if (snap.ann > p.ann) setTimeout(() => Sound.play('knock'), 60);
@@ -403,6 +412,14 @@ import { CARD_DEFS, CARD_BODY } from './cards.js?v=13';
   }
 
   const DECK_SVG = '<svg viewBox="0 0 16 16" aria-hidden="true"><rect x="4.5" y="1.5" width="9" height="12" rx="1.5" fill="#fff" stroke="#1a1a1a"/><rect x="2.5" y="2.5" width="9" height="12" rx="1.5" fill="#fff" stroke="#1a1a1a"/><path d="M7 6.5l2 2-2 2-2-2z" fill="#c8102e"/></svg>';
+  // Symbole für Hochzeit (zwei Ringe) und Trumpfabgabe (Karten wandern)
+  const ICO = {
+    rings: '<svg class="ico" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="14" r="5.5"/><circle cx="15" cy="14" r="5.5"/><path d="M7.5 5.5L9 3.5l1.5 2L9 7.5z" fill="currentColor" stroke-width="1"/></svg>',
+    give: '<svg class="ico" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><rect x="3" y="5" width="9" height="13" rx="1.5"/><path d="M14 11.5h7m-3-3l3 3-3 3" stroke-linecap="round"/></svg>',
+    take: '<svg class="ico" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><rect x="12" y="5" width="9" height="13" rx="1.5"/><path d="M3 11.5h7m-3-3l3 3-3 3" stroke-linecap="round"/></svg>',
+    swap: '<svg class="ico" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h14m-3-3l3 3-3 3M20 16H6m3-3l-3 3 3 3"/></svg>',
+  };
+
   // Geber, wer rauskommt, wer am Zug ist
   function markers(g, s) {
     const out = [];
@@ -411,6 +428,14 @@ import { CARD_DEFS, CARD_BODY } from './cards.js?v=13';
     const first = (g.dealer + 1) % 4;
     if (s === first && (g.phase === 'vorbehalt' || g.phase.startsWith('armut') || (g.phase === 'play' && !g.tricks.length && !g.current.length))) out.push('<span class="chip lead" title="spielt die erste Karte aus">▶ kommt raus</span>');
     else if (g.phase === 'play' && g.turn === s && !g.current.length && g.tricks.length) out.push('<span class="chip lead">▶ spielt aus</span>');
+    if (g.armut) {
+      if (s === g.armut.poor) out.push(`<span class="chip armutgive" title="gibt die Trümpfe ab">${ICO.give}gibt Trümpfe ab</span>`);
+      if (s === g.armut.taker) out.push(`<span class="chip armuttake" title="hat die Trümpfe aufgenommen">${ICO.take}nimmt Trümpfe</span>`);
+    }
+    if (g.type === 'hochzeit' && g.hz) {
+      if (s === g.hz.bride) out.push(`<span class="chip hz" title="hat die Hochzeit">${ICO.rings}Hochzeit</span>`);
+      if (s === g.hz.partner) out.push(`<span class="chip hzp" title="spielt mit der Hochzeit">${ICO.rings}Partner</span>`);
+    }
     if (g.phase !== 'done' && g.turn === s) out.push('<span class="chip zug">am Zug</span>');
     return out;
   }
@@ -421,7 +446,14 @@ import { CARD_DEFS, CARD_BODY } from './cards.js?v=13';
     const m = mySeat();
     let cls = 'gesund', title = 'Normalspiel', sub = '';
     if (g.phase === 'vorbehalt') { cls = ''; title = 'Vorbehalte'; sub = 'Gesund oder Vorbehalt?'; }
-    else if (g.type === 'armut' || g.phase.startsWith('armut')) { cls = 'armut'; title = 'Trumpfabgabe'; sub = g.armut && g.armut.taker !== null ? `${seatName(g.armut.poor)} & ${seatName(g.armut.taker)}` : `von ${seatName(g.armut.poor)}`; }
+    else if (g.type === 'armut' || g.phase.startsWith('armut')) {
+      cls = 'armut'; title = 'Trumpfabgabe';
+      const a = g.armut;
+      const given = a.trumps !== null && a.trumps !== undefined ? ` (3 Karten, davon ${trumpsText(a.trumps)})` : '';
+      if (a.taker === null) sub = `${seatName(a.poor)} gibt ab${given}${g.phase === 'armut_answer' ? ` · ${seatName(g.turn)} überlegt` : ''}`;
+      else if (a.returnedTrumps === null || a.returnedTrumps === undefined) sub = `${seatName(a.poor)} → ${seatName(a.taker)}${given} · Rückgabe läuft`;
+      else sub = `${seatName(a.poor)} → ${seatName(a.taker)}${given} · zurück: ${trumpsText(a.returnedTrumps)}`;
+    }
     else if (g.type === 'hochzeit') {
       if (g.hz.alone) { cls = 'solo'; title = 'Hochzeit ohne Partner'; sub = `Solo von ${seatName(g.hz.bride)}`; }
       else { cls = 'hochzeit'; title = 'Hochzeit'; sub = g.hz.done ? `${seatName(g.hz.bride)} & ${seatName(g.hz.partner)}` : `${seatName(g.hz.bride)} sucht Partner (erster fremder Fehlstich bis Stich 3)`; }
@@ -433,7 +465,8 @@ import { CARD_DEFS, CARD_BODY } from './cards.js?v=13';
     if (g.ann.contra) right.push(`<span class="chip contra">${E.ANN_LABEL.contra[g.ann.contra]}${g.ann.contra > 1 ? ' (Kontra)' : ''}</span>`);
     if (g.bock) right.push(`<span class="chip bock" title="Alle Punkte zählen doppelt">BOCK ×2 · noch ${state.bockLeft}</span>`);
     if (g.phase === 'play') right.push(`<span class="chip">Stich ${Math.min(10, g.tricks.length + 1)}/10</span>`);
-    return `<div class="banner"><span class="gtype ${cls}">${esc(title)}</span>${sub ? `<span class="gsub">${esc(sub)}</span>` : ''}<span class="gright">${right.join('')}</span></div>`;
+    const icon = cls === 'armut' ? ICO.swap : (g.type === 'hochzeit' ? ICO.rings : '');
+    return `<div class="banner"><span class="gtype ${cls}">${icon}${esc(title)}</span>${sub ? `<span class="gsub">${esc(sub)}</span>` : ''}<span class="gright">${right.join('')}</span></div>`;
   }
 
   function seatTag(s, pos) {
@@ -714,7 +747,7 @@ import { CARD_DEFS, CARD_BODY } from './cards.js?v=13';
         <li>Trumpfabgabe: Bei höchstens 3 Trümpfen gibst du alle Trümpfe (auf 3 Karten aufgefüllt) ab. Wer annimmt, gibt 3 Karten zurück und spielt mit dir Re. Nimmt keiner, wird neu gegeben.</li>
         <li>Ansagen: Re/Kontra bis zur 2. eigenen Karte (Erwiderung eine Karte länger), keine 90 bis zur 3., keine 60 bis zur 4., keine 30 bis zur 5., schwarz bis zur 6. Bei der Hochzeit beginnen die Fristen direkt nach dem Klärungsstich neu.</li>
         <li>Zählung: Punkte bekommen immer die Verlierer, jeder Punkt kostet 5 Cent.</li>
-        <li>Normalspiel: Gewonnen 1, gegen die Alten 1, keine 90/60/30/schwarz je 1, jede erfüllte Absage („keine 90 angesagt“ usw.) 1, Hochzeit gewonnen 1, Trumpfabgabe gewonnen oder verloren 1. Re angesagt verdoppelt die Summe, Kontra angesagt verdoppelt sie, beides vervierfacht.</li>
+        <li>Normalspiel: Gewonnen 1, gegen die Alten 1, keine 90/60/30/schwarz je 1, jede erfüllte Absage („keine 90 angesagt“ usw.) 1, Trumpfabgabe gewonnen oder verloren 1 (Hochzeit gibt keinen Extrapunkt). Re angesagt verdoppelt die Summe, Kontra angesagt verdoppelt sie, beides vervierfacht.</li>
         <li>Sonderpunkte (nur ohne Solo, je 1 für die Partei): Doppelkopf (Stich mit mindestens 40 Augen), Herz-Stich durchgegangen, Karlchen gewinnt den letzten Stich, Karlchen gefangen, Fuchs gefangen, Fuchs gewinnt den letzten Stich, beide Kreuz-Damen in einem Stich (für Kontra). Sonderpunkte der Verlierer werden abgezogen. Haben die Verlierer mindestens so viele Sonderpunkte wie die Gewinner Punkte, ist es ein Nullspiel.</li>
         <li>Solo (auch stille Hochzeit und Hochzeit ohne Partner): gewonnen 8, jede weitere Zeile 4 (keine 90, keine 90 angesagt, keine 60 …). Verliert der Solist, kommt „gegen die Alten“ mit 4 dazu und alles zählt dreifach. Kontra angesagt verdoppelt, Re und Kontra vervierfacht, Re allein ändert nichts. Ein Solo muss bestätigt werden.</li>
         <li>Bockrunde: entsteht automatisch. Jedes Nullspiel und jeder durchgegangene Herz-Stich (nicht im angesagten Solo, wohl aber bei stiller Hochzeit und Hochzeit ohne Partner) bringt 4 Bockspiele dazu. Ein Bockspiel verdoppelt alle Punkte. Ein Solo in der Bockrunde zählt doppelt, verbraucht aber kein Bockspiel.</li>
