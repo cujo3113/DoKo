@@ -1,6 +1,6 @@
 // Versionsnummer an den Dateinamen, damit Browser nie alte und neue Dateien mischen
-import E from './engine.js?v=11';
-import { CARD_DEFS, CARD_BODY } from './cards.js?v=11';
+import E from './engine.js?v=13';
+import { CARD_DEFS, CARD_BODY } from './cards.js?v=13';
 
   const $ = (id) => document.getElementById(id);
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -378,7 +378,7 @@ import { CARD_DEFS, CARD_BODY } from './cards.js?v=11';
     }
     if (g.type === 'armut') return g.armut.taker === null ? `Trumpfabgabe von ${seatName(g.armut.poor)}` : `Trumpfabgabe: ${seatName(g.armut.poor)} & ${seatName(g.armut.taker)}`;
     if (g.type.startsWith('solo_')) return `${E.TYPE_LABEL[g.type]} von ${seatName(g.soloist)}`;
-    if (g.stille && (viewer === g.soloist || g.phase === 'done')) return 'Stille Hochzeit';
+    if (g.stille) return 'Stille Hochzeit'; // nur gesetzt, wenn sie am Tisch schon klar ist
     return 'Normalspiel';
   }
 
@@ -426,7 +426,7 @@ import { CARD_DEFS, CARD_BODY } from './cards.js?v=11';
       if (g.hz.alone) { cls = 'solo'; title = 'Hochzeit ohne Partner'; sub = `Solo von ${seatName(g.hz.bride)}`; }
       else { cls = 'hochzeit'; title = 'Hochzeit'; sub = g.hz.done ? `${seatName(g.hz.bride)} & ${seatName(g.hz.partner)}` : `${seatName(g.hz.bride)} sucht Partner (erster fremder Fehlstich bis Stich 3)`; }
     } else if (g.type && g.type.startsWith('solo_')) { cls = 'solo'; title = E.TYPE_LABEL[g.type]; sub = `von ${seatName(g.soloist)}`; }
-    else if (g.stille && (m === g.soloist || g.phase === 'done')) { cls = 'solo'; title = 'Stille Hochzeit'; sub = g.phase === 'done' ? `von ${seatName(g.soloist)}` : 'du spielst heimlich allein'; }
+    else if (g.stille) { cls = 'solo'; title = 'Stille Hochzeit'; sub = `von ${seatName(g.soloist)}`; }
     else { title = 'Gesund'; sub = 'Normalspiel'; }
     const right = [];
     if (g.ann.re) right.push(`<span class="chip re">${E.ANN_LABEL.re[g.ann.re]}${g.ann.re > 1 ? ' (Re)' : ''}</span>`);

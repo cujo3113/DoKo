@@ -6,6 +6,7 @@ const DokoEngine = (() => {
   const RULES = {
     fuchs: true,             // Fuchs gefangen gibt einen Sonderpunkt
     centPerPoint: 5,         // Jeder Punkt kostet die Verlierer 5 Cent
+    bots: { solo: true, announce: true, think: true, rollouts: 260, soloRate: 0.85, soloSims: 80, stille: true }, // Bot-Verhalten
     hochzeitTricks: 3,       // Klärungsstiche bei der Hochzeit
     armutMaxTrumps: 3,       // Trumpfabgabe bei höchstens so vielen Trümpfen
     bockGames: 4,            // Länge einer Bockrunde
@@ -297,7 +298,7 @@ const DokoEngine = (() => {
       for (const p of ['re', 'contra']) for (let l = 2; l <= L[p]; l++) add(`${ANN_LABEL[p][l]} angesagt (${PL(p)})`, 4);
     } else if (winner) {
       add('Gewonnen');
-      if (winner === 'contra') add('Gegen die Alten');
+      if (winner === 'contra' && g.type !== 'armut') add('Gegen die Alten'); // bei verlorener Trumpfabgabe nicht
       for (let i = 0; i < levels; i++) add(LV[i]);
       for (const p of ['re', 'contra']) for (let l = 2; l <= L[p]; l++) add(`${ANN_LABEL[p][l]} angesagt (${PL(p)})`);
       if (g.type === 'hochzeit' && winner === 're') add('Hochzeit gewonnen');
@@ -529,56 +530,377 @@ const DokoEngine = (() => {
   }
 
   // ---------- Bots ----------
+  // Die Bots nutzen nur Wissen, das auch ein Mensch am Tisch hätte: eigene Karten,
+  // gespielte Karten, wer welche Farbe nicht mehr bedienen konnte, bekannte Parteien.
+  const ALL_KEYS = []; for (const su of SUITS) for (const r of RANKS) ALL_KEYS.push(su + r, su + r);
+
+  // Probespiele: Wie oft gewinnt diese Hand das Solo, wenn die übrigen 30 Karten zufällig verteilt sind?
+  function soloWinRate(hand, type, seat) {
+    const kind = kindOf(type);
+    const rest = ALL_KEYS.slice();
+    hand.forEach((c) => { const i = rest.indexOf(key(c)); if (i >= 0) rest.splice(i, 1); });
+    const rand = rng((hand.join('').length * 977 + seat * 13 + type.length * 7 + Date.now()) | 0);
+    const party = (p) => (p === seat ? 're' : 'contra');
+    let wins = 0;
+    const n = RULES.bots.soloSims;
+    for (let k = 0; k < n; k++) {
+      const cards = rest.slice();
+      for (let i = cards.length - 1; i > 0; i--) { const j = Math.floor(rand() * (i + 1)); [cards[i], cards[j]] = [cards[j], cards[i]]; }
+      const hands = [[], [], [], []];
+      let ci = 0; for (let p = 0; p < 4; p++) hands[p] = p === seat ? hand.map(key) : cards.slice(ci, (ci += 10));
+      let eyes = 0, turn = (k % 4), cur = [], trickNo = 0; // Ausspieler variiert
+      while (trickNo < 10) {
+        const c = quickPolicy(hands[turn], cur, kind, party, turn, trickNo);
+        hands[turn].splice(hands[turn].indexOf(c), 1);
+        cur.push({ seat: turn, card: c });
+        turn = (turn + 1) % 4;
+        if (cur.length === 4) {
+          const led = followSuit(cur[0].card, kind);
+          let wi = 0, wp = power(cur[0].card, led, kind);
+          for (let i = 1; i < 4; i++) { const pw = power(cur[i].card, led, kind); if (pw > wp) { wp = pw; wi = i; } }
+          if (cur[wi].seat === seat) eyes += cur.reduce((x, q) => x + pts(q.card), 0);
+          turn = cur[wi].seat; cur = []; trickNo++;
+        }
+      }
+      if (eyes >= 121) wins++;
+    }
+    return wins / n;
+  }
+
+  function botDecl(g, seat) {
+    const h = g.hands[seat];
+    const o = declOptions(g, seat);
+    const has = (k) => h.filter((c) => key(c) === k).length;
+    const cnt = (r) => h.filter((c) => rankOf(c) === r).length;
+    const aces = cnt('A');
+    const nT = countTrumps(h);
+    const hiT = h.filter((c) => { const i = TRUMPS.normal.indexOf(key(c)); return i >= 0 && i < 5; }).length;
+    // Solo nur, wenn es in vielen Probespielen fast immer gewonnen wird (ein verlorenes Solo kostet dreifach)
+    if (RULES.bots.solo) {
+      const cand = [];
+      if (cnt('Q') >= 4) cand.push('solo_damen');
+      if (cnt('J') >= 4) cand.push('solo_buben');
+      if (cnt('K') >= 4) cand.push('solo_koenige');
+      if (nT >= 7 && hiT >= 3) cand.push('solo_trumpf');
+      let best = null, bestRate = RULES.bots.soloRate;
+      for (const t of cand) { const r = soloWinRate(h, t, seat); if (r >= bestRate) { best = t; bestRate = r; } }
+      if (best) return best;
+    }
+    if (o.includes('schmeissen')) return 'schmeissen';
+    if (o.includes('hochzeit')) return RULES.bots.stille && soloWinRate(h, 'solo_trumpf', seat) >= RULES.bots.soloRate ? 'gesund' : 'hochzeit'; // sehr starke Hand: heimlich allein
+    if (o.includes('armut')) return 'armut';
+    return 'gesund';
+  }
+
+  function botAnnounce(g, seat) {
+    if (!RULES.bots.announce || g.ann.hist.some((x) => x.seat === seat)) return null;
+    if (isSoloType(g.type) || g.stille || (g.type === 'hochzeit' && g.hz.alone)) return null;
+    if (!announceOptions(g, seat).includes(1)) return null;
+    const party = partyOf(g, seat);
+    if (!party || g.ann[party] >= 1) return null;
+    const kind = kindOf(g.type);
+    const h = g.hands[seat];
+    const nT = h.filter((c) => isTrump(c, kind)).length;
+    const hi = h.filter((c) => { const i = TRUMPS[kind].indexOf(key(c)); return i >= 0 && i < 5; }).length;
+    const aces = h.filter((c) => rankOf(c) === 'A' && !isTrump(c, kind)).length;
+    const strong = (nT >= 6 && hi >= 3) || (nT >= 5 && hi >= 3 && aces >= 2) || (nT >= 7 && hi >= 2);
+    return strong ? { t: 'announce', level: 1 } : null;
+  }
+
+  function botCard(g, seat) {
+    const kind = kindOf(g.type);
+    const h = g.hands[seat];
+    const legal = legalCards(h, g.current, kind);
+    if (legal.length === 1) return legal[0];
+    const T = TRUMPS[kind];
+    const tIdx = (c) => T.indexOf(key(c));
+    const isT = (c) => tIdx(c) >= 0;
+    const trumpCost = (c) => (isT(c) ? (T.length - tIdx(c)) * 3 : 0); // hohe Trümpfe sind wertvoll
+    const minBy = (arr, f) => arr.reduce((b, c) => (f(c) < f(b) ? c : b));
+    const maxBy = (arr, f) => arr.reduce((b, c) => (f(c) > f(b) ? c : b));
+
+    // Wissen: ungesehene Karten und Fehlfarben
+    const playedTricks = g.tricks.concat(g.current.length ? [{ cards: g.current }] : []);
+    const unseen = ALL_KEYS.slice();
+    const drop = (k) => { const i = unseen.indexOf(k); if (i >= 0) unseen.splice(i, 1); };
+    h.forEach((c) => drop(key(c)));
+    playedTricks.forEach((t) => t.cards.forEach((p) => drop(key(p.card))));
+    const voids = [0, 1, 2, 3].map(() => new Set());
+    playedTricks.forEach((t) => {
+      const ld = followSuit(t.cards[0].card, kind);
+      t.cards.slice(1).forEach((p) => { if (followSuit(p.card, kind) !== ld) voids[p.seat].add(ld); });
+    });
+    const unseenOf = (su) => unseen.filter((k) => followSuit(k, kind) === su).length;
+    const timesLed = (su) => g.tricks.filter((t) => followSuit(t.cards[0].card, kind) === su).length;
+
+    // Parteien aus Sicht dieses Spielers
+    const myParty = knownParty(g, seat, seat);
+    const partyOfP = (p) => (p === seat ? myParty : knownParty(g, seat, p));
+    const isPartner = (p) => !!myParty && partyOfP(p) === myParty;
+    const isOpp = (p) => !!myParty && !!partyOfP(p) && partyOfP(p) !== myParty;
+
+    const after = []; for (let i = g.current.length + 1; i < 4; i++) after.push((seat + i - g.current.length) % 4);
+    const threats = after.filter((p) => !isPartner(p));
+
+    // Kann eine noch ungesehene Karte diese Karte schlagen, gespielt von einem der Spieler p?
+    function beatable(card, led, players) {
+      if (!players.length) return false;
+      const myPow = power(card, led, kind);
+      const ledLeft = led === 'T' ? 0 : unseenOf(led);
+      for (const u of unseen) {
+        if (power(u, led, kind) <= myPow) continue;
+        const uT = isTrump(u, kind);
+        for (const p of players) {
+          if (led === 'T') { if (uT && !voids[p].has('T')) return true; }
+          else if (!uT) { if (suitOf(u) === led && !voids[p].has(led)) return true; }
+          else if (!voids[p].has('T') && (voids[p].has(led) || ledLeft < players.length)) return true;
+        }
+      }
+      return false;
+    }
+
+    // ---- Ausspielen ----
+    if (!g.current.length) {
+      const fehl = legal.filter((c) => !isT(c));
+      const trumps = legal.filter(isT);
+      // Hochzeit: die Braut sucht über einen Fehlstich einen Partner -> kleine Fehlkarte
+      if (g.type === 'hochzeit' && g.hz && !g.hz.done && seat === g.hz.bride && fehl.length) {
+        return minBy(fehl, (c) => power(c, suitOf(c), kind) + pts(c));
+      }
+      // sicheres Fehl-Ass: Farbe noch nicht gelaufen, genug Karten draußen, kein Gegner blank
+      const aces = fehl.filter((c) => rankOf(c) === 'A' && timesLed(suitOf(c)) === 0 && unseenOf(suitOf(c)) >= 3
+        && ![0, 1, 2, 3].some((p) => p !== seat && !isPartner(p) && voids[p].has(suitOf(c))));
+      if (aces.length) return maxBy(aces, (c) => unseenOf(suitOf(c)));
+      // höchster noch ausstehender Trumpf in meiner Hand: zieht Trümpfe (Solist oder viele Trümpfe)
+      const myTrumps = h.filter(isT).length;
+      const topTrump = trumps.length ? minBy(trumps, tIdx) : null;
+      const soloist = myParty === 're' && (isSoloType(g.type) || g.stille || (g.type === 'hochzeit' && g.hz && g.hz.alone));
+      if (topTrump && !unseen.some((k) => isTrump(k, kind) && tIdx(k) < tIdx(topTrump)) && (soloist || myTrumps >= 4)) return topTrump;
+      // Partner ist in einer Farbe blank -> diese Farbe anspielen, damit er stechen kann
+      const partnerVoid = fehl.filter((c) => [0, 1, 2, 3].some((p) => p !== seat && isPartner(p) && voids[p].has(suitOf(c)) && !voids[p].has('T')));
+      if (partnerVoid.length) return minBy(partnerVoid, pts);
+      // sonst: kleine Fehlkarte einer Farbe, in der kein Gegner blank ist; Asse und Zehnen schonen
+      const safeFehl = fehl.filter((c) => ![0, 1, 2, 3].some((p) => p !== seat && isOpp(p) && voids[p].has(suitOf(c))));
+      const pool = safeFehl.length ? safeFehl : fehl;
+      if (pool.length && !soloist) return minBy(pool, (c) => pts(c) * 2 + (rankOf(c) === 'A' ? 10 : 0));
+      if (trumps.length) {
+        // kleiner Trumpf, aber nicht den Fuchs und nicht Karlchen verschenken
+        const lowT = trumps.filter((c) => key(c) !== 'DA' && key(c) !== 'CJ');
+        return maxBy(lowT.length ? lowT : trumps, tIdx);
+      }
+      return minBy(legal, pts);
+    }
+
+    // ---- Zugeben ----
+    const led = followSuit(g.current[0].card, kind);
+    const wi = trickWinnerIdx(g.current, kind);
+    const wSeat = g.current[wi].seat;
+    const wCard = g.current[wi].card;
+    const wPow = power(wCard, led, kind);
+    const trickPts = g.current.reduce((n, p) => n + pts(p.card), 0);
+    const lastTrick = g.tricks.length === 9;
+    const keepCJ = (c) => key(c) === 'CJ' && !lastTrick ? 25 : 0; // Karlchen für den letzten Stich aufheben
+
+    // Partner liegt vorn und kann nicht mehr überstochen werden -> schmieren
+    if (isPartner(wSeat) && !beatable(wCard, led, threats)) {
+      return maxBy(legal, (c) => pts(c) * 10 - (isT(c) && tIdx(c) < 6 ? 120 : 0) - keepCJ(c) * 4);
+    }
+    const winners = legal.filter((c) => power(c, led, kind) > wPow);
+    const expected = trickPts + after.length * 5; // grob geschätzte Augen, die noch kommen
+    if (winners.length && !isPartner(wSeat)) {
+      const safe = winners.filter((c) => !beatable(c, led, threats));
+      // Letzter Stich mit Karlchen oder Fuchs gewinnen lohnt doppelt
+      if (lastTrick) {
+        const special = (safe.length ? safe : winners).filter((c) => key(c) === 'CJ' || key(c) === 'DA');
+        if (special.length) return special[0];
+      }
+      if (safe.length) {
+        // als Letzter: Gewinner mit möglichst vielen Augen; sonst den billigsten sicheren Gewinner
+        if (!after.length) return maxBy(safe, (c) => pts(c) - trumpCost(c) - keepCJ(c));
+        if (expected >= 8 || isOpp(wSeat)) return minBy(safe, (c) => trumpCost(c) + keepCJ(c) + (key(c) === 'DA' ? 15 : 0));
+      }
+      // unsicher: nur mit billigem Gewinner (z. B. Fehl-Ass beim Bedienen) mitgehen, wenn genug liegt
+      const cheap = winners.filter((c) => trumpCost(c) <= 12 && key(c) !== 'DA' && key(c) !== 'CJ');
+      if (cheap.length && (expected >= 12 || !after.length)) return minBy(cheap, (c) => trumpCost(c) - pts(c));
+    }
+    // abwerfen: wenig Augen, keine hohen Trümpfe, Asse/Fuchs/Karlchen schonen
+    return minBy(legal, (c) => pts(c) * 3 + trumpCost(c) + (rankOf(c) === 'A' && !isT(c) ? 8 : 0) + (key(c) === 'DA' ? 20 : 0) + keepCJ(c));
+  }
+
+  // ---- Vorausdenken (Monte-Carlo): unbekannte Karten passend verteilen, Rest des Spiels durchspielen ----
+  function rng(seed) { let x = seed >>> 0 || 1; return () => ((x ^= x << 13, x ^= x >>> 17, x ^= x << 5) >>> 0) / 4294967296; }
+  function quickPolicy(hand, current, kind, partyOf2, me, trickNo) {
+    const legal = legalCards(hand, current, kind);
+    if (legal.length === 1) return legal[0];
+    const T = TRUMPS[kind];
+    const ti = (c) => T.indexOf(key(c));
+    const tc = (c) => (ti(c) >= 0 ? (T.length - ti(c)) * 3 : 0);
+    let best = legal[0], bv;
+    const pick = (f, max) => { bv = undefined; for (const c of legal) { const v = f(c); if (bv === undefined || (max ? v > bv : v < bv)) { bv = v; best = c; } } return best; };
+    if (!current.length) {
+      const aceIdx = legal.findIndex((c) => rankOf(c) === 'A' && ti(c) < 0);
+      if (aceIdx >= 0) return legal[aceIdx];
+      if (legal.some((c) => ti(c) < 0)) return pick((c) => (ti(c) < 0 ? pts(c) : 99), false);
+      return pick((c) => ti(c) + (key(c) === 'DA' ? -5 : 0), true);
+    }
+    const led = followSuit(current[0].card, kind);
+    let wi = 0, wp = power(current[0].card, led, kind);
+    for (let i = 1; i < current.length; i++) { const p = power(current[i].card, led, kind); if (p > wp) { wp = p; wi = i; } }
+    const ws = current[wi].seat;
+    const partnerWin = partyOf2(ws) === partyOf2(me);
+    const last = current.length === 3;
+    if (partnerWin && (last || wp >= 1000 - 3)) return pick((c) => pts(c) * 10 - (ti(c) >= 0 && ti(c) < 6 ? 150 : 0) - (key(c) === 'CJ' && trickNo < 9 ? 60 : 0), true);
+    if (!partnerWin) {
+      let anyWin = false; for (const c of legal) if (power(c, led, kind) > wp) { anyWin = true; break; }
+      if (anyWin) return pick((c) => (power(c, led, kind) > wp ? (last ? -pts(c) + tc(c) : tc(c)) : 1e6), false);
+    }
+    return pick((c) => pts(c) * 3 + tc(c) + (key(c) === 'DA' ? 20 : 0), false);
+  }
+
+  function thinkCard(g, seat) {
+    const kind = kindOf(g.type);
+    const h = g.hands[seat];
+    const legal = legalCards(h, g.current, kind);
+    const cand = []; const seenK = new Set();
+    for (const c of legal) if (!seenK.has(key(c))) { seenK.add(key(c)); cand.push(c); }
+    if (cand.length === 1) return cand[0];
+
+    // Wissen des Bots
+    const playedTricks = g.tricks.concat(g.current.length ? [{ cards: g.current }] : []);
+    const unseen = ALL_KEYS.slice();
+    const drop = (k) => { const i = unseen.indexOf(k); if (i >= 0) unseen.splice(i, 1); };
+    h.forEach((c) => drop(key(c)));
+    const playedCQ = [0, 0, 0, 0];
+    playedTricks.forEach((t) => t.cards.forEach((p) => { drop(key(p.card)); if (key(p.card) === 'CQ') playedCQ[p.seat]++; }));
+    const voids = [0, 1, 2, 3].map(() => new Set());
+    playedTricks.forEach((t) => { const ld = followSuit(t.cards[0].card, kind); t.cards.slice(1).forEach((p) => { if (followSuit(p.card, kind) !== ld) voids[p.seat].add(ld); }); });
+    const others = [0, 1, 2, 3].filter((p) => p !== seat);
+    const need = [0, 0, 0, 0]; const noCQ = [false, false, false, false];
+    const cqParties = g.type === 'normal'; // Parteien hängen an den Kreuz-Damen
+    if (cqParties) for (const p of others) {
+      const kp = knownParty(g, seat, p);
+      if (kp === 'contra') noCQ[p] = true;
+      else if (kp === 're' && playedCQ[p] === 0) need[p] = 1;
+    }
+    if (g.type === 'hochzeit' && g.hz && g.hz.bride !== seat) need[g.hz.bride] = 2 - playedCQ[g.hz.bride];
+    const cap = [0, 1, 2, 3].map((p) => (p === seat ? 0 : g.hands[p].length));
+
+    const myKeys = h.map(key);
+    const rand = rng((g.tricks.length * 7919 + g.current.length * 104729 + seat * 31 + myKeys.join('').length * 17 + Date.now()) | 0);
+    function sampleWorld() {
+      for (let attempt = 0; attempt < 30; attempt++) {
+        const relax = attempt > 20;
+        const cards = unseen.slice();
+        for (let i = cards.length - 1; i > 0; i--) { const j = Math.floor(rand() * (i + 1)); [cards[i], cards[j]] = [cards[j], cards[i]]; }
+        const hands = [[], [], [], []]; const left = cap.slice();
+        let ok = true;
+        // Pflichtkarten (Kreuz-Damen) zuerst
+        for (const p of others) for (let n = 0; n < need[p]; n++) {
+          const i = cards.indexOf('CQ'); if (i < 0 || left[p] <= 0) { ok = relax; break; }
+          hands[p].push('CQ'); left[p]--; cards.splice(i, 1);
+        }
+        if (!ok) continue;
+        for (const c of cards) {
+          const su = followSuit(c, kind);
+          const elig = others.filter((p) => left[p] > 0 && (relax || (!voids[p].has(su) && !(c === 'CQ' && noCQ[p]))));
+          if (!elig.length) { ok = false; break; }
+          // gleichmäßig nach freien Plätzen gewichten
+          let r = rand() * elig.reduce((n, p) => n + left[p], 0), pick = elig[0];
+          for (const p of elig) { r -= left[p]; if (r < 0) { pick = p; break; } }
+          hands[pick].push(c); left[pick]--;
+        }
+        if (ok) return hands;
+      }
+      return null;
+    }
+
+    const myPartyKnown = knownParty(g, seat, seat);
+    function rollout(world, first) {
+      const hands = world.map((x) => x.slice());
+      hands[seat] = myKeys.slice(); hands[seat].splice(hands[seat].indexOf(key(first)), 1);
+      // Parteien in dieser Welt
+      let re;
+      if (cqParties) {
+        re = new Set();
+        for (let p = 0; p < 4; p++) if (playedCQ[p] || hands[p].includes('CQ') || (p === seat && (myKeys.includes('CQ')))) re.add(p);
+      } else re = new Set(g.re);
+      let hzOpen = g.type === 'hochzeit' && g.hz && !g.hz.done;
+      const party = (p) => (re.has(p) ? 're' : 'contra');
+      const eyes = { re: 0, contra: 0 };
+      g.tricks.forEach((t) => { eyes[party(t.winner)] += t.points; });
+      let cur = g.current.map((p) => ({ seat: p.seat, card: key(p.card) }));
+      cur.push({ seat, card: key(first) });
+      let turn = (seat + 1) % 4;
+      let trickNo = g.tricks.length;
+      while (true) {
+        if (cur.length === 4) {
+          const led = followSuit(cur[0].card, kind);
+          let wi = 0, wp = power(cur[0].card, led, kind);
+          for (let i = 1; i < 4; i++) { const pw = power(cur[i].card, led, kind); if (pw > wp) { wp = pw; wi = i; } }
+          const w = cur[wi].seat;
+          if (hzOpen) {
+            if (led !== 'T' && w !== g.hz.bride) { re.add(w); hzOpen = false; }
+            else if (trickNo + 1 >= RULES.hochzeitTricks) hzOpen = false;
+          }
+          eyes[party(w)] += cur.reduce((n, p) => n + pts(p.card), 0);
+          trickNo++; cur = []; turn = w;
+          if (trickNo === 10) break;
+        }
+        const c = quickPolicy(hands[turn], cur, kind, party, turn, trickNo);
+        hands[turn].splice(hands[turn].indexOf(c), 1);
+        cur.push({ seat: turn, card: c });
+        turn = (turn + 1) % 4;
+      }
+      const mine = myPartyKnown || party(seat);
+      const reWins = eyes.re >= 121;
+      const win = mine === 're' ? reWins : !reWins;
+      return eyes[mine] + (win ? 45 : 0);
+    }
+
+    const N = Math.max(10, Math.ceil(RULES.bots.rollouts / cand.length));
+    const score = cand.map(() => 0);
+    let used = 0;
+    for (let i = 0; i < N; i++) {
+      const world = sampleWorld();
+      if (!world) continue;
+      used++;
+      cand.forEach((c, j) => { score[j] += rollout(world, c); });
+    }
+    if (!used) return null;
+    let bi = 0; for (let j = 1; j < cand.length; j++) if (score[j] > score[bi]) bi = j;
+    return cand[bi];
+  }
+
   function botAction(state, seat) {
     const g = state.game;
     if (!g || g.turn !== seat) return null;
     const h = g.hands[seat];
-    const kind = kindOf(g.type || 'normal');
-    if (g.phase === 'vorbehalt') {
-      const o = declOptions(g, seat);
-      if (o.includes('hochzeit')) return { t: 'decl', choice: 'hochzeit' };
-      if (o.includes('armut')) return { t: 'decl', choice: 'armut' };
-      return { t: 'decl', choice: 'gesund' };
-    }
-    const cheapest = (cards, n) => cards.slice().sort((a, b) => pts(a) - pts(b) || (isTrump(a, 'normal') - isTrump(b, 'normal'))).slice(0, n);
+    if (g.phase === 'vorbehalt') return { t: 'decl', choice: botDecl(g, seat) };
+    const lowFirst = (cards) => cards.slice().sort((a, b) => pts(a) - pts(b));
     if (g.phase === 'armut_give') {
       const tr = h.filter((c) => isTrump(c, 'normal'));
-      const rest = cheapest(h.filter((c) => !isTrump(c, 'normal')), 3 - tr.length);
-      return { t: 'armutGive', cards: tr.concat(rest) };
+      const fehl = lowFirst(h.filter((c) => !isTrump(c, 'normal') && rankOf(c) !== 'A'));
+      const rest = fehl.length >= 3 - tr.length ? fehl : lowFirst(h.filter((c) => !isTrump(c, 'normal')));
+      return { t: 'armutGive', cards: tr.concat(rest.slice(0, 3 - tr.length)) };
     }
-    if (g.phase === 'armut_answer') return { t: 'armutAnswer', accept: countTrumps(h) >= 6 };
+    if (g.phase === 'armut_answer') {
+      const nT = countTrumps(h);
+      const hi = h.filter((c) => { const i = TRUMPS.normal.indexOf(key(c)); return i >= 0 && i < 5; }).length;
+      return { t: 'armutAnswer', accept: (nT >= 6 && hi >= 2) || nT >= 7 };
+    }
     if (g.phase === 'armut_return') {
-      const fehl = cheapest(h.filter((c) => !isTrump(c, 'normal')), 3);
-      const tr = sortHand(h.filter((c) => isTrump(c, 'normal')), 'normal').reverse();
-      return { t: 'armutReturn', cards: fehl.concat(tr).slice(0, 3) };
+      // kleine Fehlkarten zurück, möglichst kurze Farben (macht blank); notfalls schwache Trümpfe
+      const fehl = h.filter((c) => !isTrump(c, 'normal'));
+      const len = (c) => fehl.filter((x) => suitOf(x) === suitOf(c)).length;
+      const back = fehl.slice().sort((a, b) => len(a) - len(b) || pts(a) - pts(b)).filter((c) => rankOf(c) !== 'A');
+      const weakT = sortHand(h.filter((c) => isTrump(c, 'normal')), 'normal').reverse();
+      return { t: 'armutReturn', cards: back.concat(fehl.filter((c) => rankOf(c) === 'A'), weakT).slice(0, 3) };
     }
     if (g.phase !== 'play') return null;
-    const legal = legalCards(h, g.current, kind);
-    const tIdx = (c) => TRUMPS[kind].indexOf(key(c));
-    if (!g.current.length) {
-      const aces = legal.filter((c) => !isTrump(c, kind) && rankOf(c) === 'A');
-      if (aces.length) return { t: 'play', card: aces[0] };
-      const fehl = legal.filter((c) => !isTrump(c, kind));
-      if (fehl.length) return { t: 'play', card: cheapest(fehl, 1)[0] };
-      return { t: 'play', card: legal.slice().sort((a, b) => tIdx(b) - tIdx(a))[0] };
-    }
-    const led = followSuit(g.current[0].card, kind);
-    const wi = trickWinnerIdx(g.current, kind);
-    const winSeat = g.current[wi].seat;
-    const bestP = power(g.current[wi].card, led, kind);
-    const mine = knownParty(g, seat, seat);
-    const theirs = knownParty(g, seat, winSeat);
-    const last = g.current.length === 3;
-    if (mine && theirs === mine && (last || bestP >= 1000 - 4)) {
-      const val = (c) => pts(c) - (isTrump(c, kind) && tIdx(c) < 5 ? 30 : 0);
-      return { t: 'play', card: legal.slice().sort((a, b) => val(b) - val(a))[0] };
-    }
-    const winning = legal.filter((c) => power(c, led, kind) > bestP).sort((a, b) => power(a, led, kind) - power(b, led, kind));
-    if (winning.length) {
-      const pick = last ? winning.slice().sort((a, b) => pts(b) - pts(a))[0] : winning[0];
-      return { t: 'play', card: pick };
-    }
-    return { t: 'play', card: legal.slice().sort((a, b) => pts(a) - pts(b) || (isTrump(a, kind) - isTrump(b, kind)))[0] };
+    const ann = botAnnounce(g, seat);
+    if (ann) return ann;
+    const thought = RULES.bots.think ? thinkCard(g, seat) : null;
+    return { t: 'play', card: thought || botCard(g, seat) };
   }
 
   // ---------- Mehrspieler: Ansicht pro Spieler, Rechteprüfung, Bot-Schritt ----------
@@ -595,14 +917,18 @@ const DokoEngine = (() => {
     if (!g) return v;
     const done = g.phase === 'done';
     const viewer = me >= 0 ? me : -1;
+    // Stille Hochzeit bleibt geheim (auch auf dem eigenen Bildschirm), bis sie am Tisch eindeutig ist:
+    // derselbe Spieler hat beide Kreuz-Damen ausgespielt, oder das Spiel ist vorbei.
+    const cqBySoloist = g.stille ? g.tricks.concat([{ cards: g.current }]).reduce((n, t) => n + t.cards.filter((p) => p.seat === g.soloist && key(p.card) === 'CQ').length, 0) : 0;
+    const stilleKnown = g.stille && (done || cqBySoloist === 2);
     const vg = {
       no: g.no, dealId: g.dealId, dealer: g.dealer, phase: g.phase, turn: g.turn, type: g.type, bock: g.bock,
       tricks: clone(g.tricks), current: clone(g.current), ann: clone(g.ann), hz: g.hz ? clone(g.hz) : null,
       hands: g.hands.map((h, i) => (i === me ? h.slice() : h.map(() => 'XX'))),
       decl: g.decl.map((d, i) => (i === me || !d ? d : d === 'gesund' ? 'gesund' : 'vorbehalt')),
       known: [0, 1, 2, 3].map((t) => knownParty(g, viewer, t)),
-      stille: done || me === g.soloist ? g.stille : false,
-      soloist: isSoloType(g.type) || done || (g.stille && me === g.soloist) ? g.soloist : null,
+      stille: stilleKnown,
+      soloist: isSoloType(g.type) || done || stilleKnown ? g.soloist : null,
       re: done ? g.re.slice() : [],
       result: done ? clone(g.result) : null,
       annOptions: me >= 0 ? announceOptions(g, me) : [],
