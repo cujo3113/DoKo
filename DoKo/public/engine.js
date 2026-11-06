@@ -301,7 +301,6 @@ const DokoEngine = (() => {
       if (winner === 'contra' && g.type !== 'armut') add('Gegen die Alten'); // bei verlorener Trumpfabgabe nicht
       for (let i = 0; i < levels; i++) add(LV[i]);
       for (const p of ['re', 'contra']) for (let l = 2; l <= L[p]; l++) add(`${ANN_LABEL[p][l]} angesagt (${PL(p)})`);
-      if (g.type === 'hochzeit' && winner === 're') add('Hochzeit gewonnen');
       if (g.type === 'armut') add(winner === 're' ? 'Trumpfabgabe gewonnen' : 'Trumpfabgabe verloren');
     }
 

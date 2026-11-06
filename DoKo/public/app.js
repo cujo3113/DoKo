@@ -1,6 +1,6 @@
 // Versionsnummer an den Dateinamen, damit Browser nie alte und neue Dateien mischen
-import E from './engine.js?v=16';
-import { CARD_DEFS, CARD_BODY } from './cards.js?v=16';
+import E from './engine.js?v=17';
+import { CARD_DEFS, CARD_BODY } from './cards.js?v=17';
 
   const $ = (id) => document.getElementById(id);
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -747,7 +747,7 @@ import { CARD_DEFS, CARD_BODY } from './cards.js?v=16';
         <li>Trumpfabgabe: Bei höchstens 3 Trümpfen gibst du alle Trümpfe (auf 3 Karten aufgefüllt) ab. Wer annimmt, gibt 3 Karten zurück und spielt mit dir Re. Nimmt keiner, wird neu gegeben.</li>
         <li>Ansagen: Re/Kontra bis zur 2. eigenen Karte (Erwiderung eine Karte länger), keine 90 bis zur 3., keine 60 bis zur 4., keine 30 bis zur 5., schwarz bis zur 6. Bei der Hochzeit beginnen die Fristen direkt nach dem Klärungsstich neu.</li>
         <li>Zählung: Punkte bekommen immer die Verlierer, jeder Punkt kostet 5 Cent.</li>
-        <li>Normalspiel: Gewonnen 1, gegen die Alten 1, keine 90/60/30/schwarz je 1, jede erfüllte Absage („keine 90 angesagt“ usw.) 1, Hochzeit gewonnen 1, Trumpfabgabe gewonnen oder verloren 1. Re angesagt verdoppelt die Summe, Kontra angesagt verdoppelt sie, beides vervierfacht.</li>
+        <li>Normalspiel: Gewonnen 1, gegen die Alten 1, keine 90/60/30/schwarz je 1, jede erfüllte Absage („keine 90 angesagt“ usw.) 1, Trumpfabgabe gewonnen oder verloren 1 (Hochzeit gibt keinen Extrapunkt). Re angesagt verdoppelt die Summe, Kontra angesagt verdoppelt sie, beides vervierfacht.</li>
         <li>Sonderpunkte (nur ohne Solo, je 1 für die Partei): Doppelkopf (Stich mit mindestens 40 Augen), Herz-Stich durchgegangen, Karlchen gewinnt den letzten Stich, Karlchen gefangen, Fuchs gefangen, Fuchs gewinnt den letzten Stich, beide Kreuz-Damen in einem Stich (für Kontra). Sonderpunkte der Verlierer werden abgezogen. Haben die Verlierer mindestens so viele Sonderpunkte wie die Gewinner Punkte, ist es ein Nullspiel.</li>
         <li>Solo (auch stille Hochzeit und Hochzeit ohne Partner): gewonnen 8, jede weitere Zeile 4 (keine 90, keine 90 angesagt, keine 60 …). Verliert der Solist, kommt „gegen die Alten“ mit 4 dazu und alles zählt dreifach. Kontra angesagt verdoppelt, Re und Kontra vervierfacht, Re allein ändert nichts. Ein Solo muss bestätigt werden.</li>
         <li>Bockrunde: entsteht automatisch. Jedes Nullspiel und jeder durchgegangene Herz-Stich (nicht im angesagten Solo, wohl aber bei stiller Hochzeit und Hochzeit ohne Partner) bringt 4 Bockspiele dazu. Ein Bockspiel verdoppelt alle Punkte. Ein Solo in der Bockrunde zählt doppelt, verbraucht aber kein Bockspiel.</li>
