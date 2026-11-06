@@ -88,9 +88,12 @@ g.bock = 2; ex('E2 Bock stapelt nicht', g, [0, 32, 0, 32]);
 // F Hochzeit gewonnen 130:110 -> gewonnen 1 + Hochzeit 1 = 2
 g = mk([0, 1], { type: 'hochzeit', hz: { bride: 0, partner: 1, alone: false, done: true, clar: 1 } }); g.tricks = tricksFor([0, 1], 130, 110);
 ex('F Hochzeit gewonnen', g, [0, 0, 2, 2]);
-// G Trumpfabgabe verloren 115:125 -> gewonnen 1 + gegen die Alten 1 + Trumpfabgabe verloren 1 = 3 je Re-Spieler
+// G Trumpfabgabe verloren 115:125 -> gewonnen 1 + Trumpfabgabe verloren 1 = 2 je Re-Spieler (kein „gegen die Alten“)
 g = mk([1, 3], { type: 'armut', armut: { poor: 3, taker: 1 } }); g.tricks = tricksFor([1, 3], 115, 125, 5);
-ex('G Trumpfabgabe verloren', g, [0, 3, 0, 3]);
+ex('G Trumpfabgabe verloren', g, [0, 2, 0, 2]);
+// G2 Trumpfabgabe gewonnen 130:110 -> gewonnen 1 + Trumpfabgabe gewonnen 1 = 2 je Kontra-Spieler
+g = mk([1, 3], { type: 'armut', armut: { poor: 3, taker: 1 } }); g.tricks = tricksFor([1, 3], 130, 110);
+ex('G2 Trumpfabgabe gewonnen', g, [2, 0, 2, 0]);
 // H Solo gewonnen 200:40 -> 8 + keine 90 4 + keine 60 4 = 16 je Gegenspieler
 g = mk([0], { type: 'solo_damen', soloist: 0 }); g.tricks = tricksFor([0], 200, 40, 7);
 ex('H Damensolo gewonnen, keine 60', g, [0, 16, 16, 16]);
@@ -185,6 +188,29 @@ s = playOut(s);
 assert.strictEqual(s.game.result.label, 'Stille Hochzeit');
 { const pt = s.game.result.points; assert(pt[0] === 0 ? pt[1] === pt[2] && pt[2] === pt[3] && pt[1] > 0 : pt[1] + pt[2] + pt[3] === 0); }
 console.log('Stille Hochzeit:', s.game.result.points);
+// Stille Hochzeit bleibt in allen Ansichten geheim, bis beide Kreuz-Damen vom selben Spieler gefallen sind
+{
+  const U = 'SPIELERNULL0000000000';
+  let x = E.newTable();
+  x = E.dispatch(x, U, { t: 'sit', seat: 0, name: 'Solist' }).state;
+  x = E.dispatch(x, U, { t: 'fillBots' }).state;
+  x = E.apply(x, 0, { t: 'start', hands }).state;
+  for (const p of [0, 1, 2, 3]) x = E.apply(x, p, { t: 'decl', choice: 'gesund' }).state;
+  const seen = () => [E.viewFor(x, U), E.viewFor(x, 'niemand')].map((v) => [v.game.stille, v.game.soloist]);
+  assert.deepStrictEqual(seen(), [[false, null], [false, null]], 'vor dem Ausspielen geheim, auch für den Solisten');
+  let cq = 0;
+  while (x.game.phase !== 'done') {
+    const t0 = x.game.turn;
+    const a0 = E.botAction(x, t0);
+    x = E.apply(x, t0, a0).state;
+    if (t0 === 0 && a0.card && a0.card.startsWith('CQ')) {
+      cq++;
+      if (cq === 1) assert.deepStrictEqual(seen(), [[false, null], [false, null]], 'nach der ersten Kreuz-Dame noch geheim');
+      if (cq === 2 && x.game.phase !== 'done') assert.deepStrictEqual(seen(), [[true, 0], [true, 0]], 'nach der zweiten Kreuz-Dame für alle sichtbar');
+    }
+  }
+  assert.deepStrictEqual(seen(), [[true, 0], [true, 0]], 'nach dem Spiel für alle sichtbar');
+}
 
 // Hochzeit angesagt
 s = table(); s = run(s, { seat: 0, a: { t: 'start', hands } });
