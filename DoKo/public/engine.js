@@ -110,7 +110,7 @@ const DokoEngine = (() => {
   }
 
   function newTable() {
-    return { v: 1, seats: [null, null, null, null], dealer: 3, bock: [], games: [], game: null, phase: 'lobby', log: [], rev: 0 };
+    return { v: 1, seats: [null, null, null, null], dealer: 3, bock: [], bockLeft: 0, games: [], game: null, phase: 'lobby', log: [], rev: 0 };
   }
 
   function seatName(state, s) { return state.seats[s] ? state.seats[s].name : `Platz ${s + 1}`; }
@@ -126,7 +126,7 @@ const DokoEngine = (() => {
       phase: 'vorbehalt', turn: (d + 1) % 4, decl: [null, null, null, null],
       type: null, stille: false, soloist: null, re: [],
       tricks: [], current: [], ann: { re: 0, contra: 0, hist: [] },
-      armut: null, hz: null, bock: state.bock[0] || 0, result: null,
+      armut: null, hz: null, bock: state.bockLeft > 0 ? 1 : 0, result: null,
     };
     log(state, `Spiel ${state.game.no}: ${seatName(state, d)} gibt.`);
   }
@@ -139,7 +139,7 @@ const DokoEngine = (() => {
   // Schmeißen: höchster Trumpf ist der Karo-Bube (oder schwächer) oder mindestens 5 Könige
   function schmeissReason(h) {
     const top = Math.min(...h.map((c) => TRUMPS.normal.indexOf(key(c))).filter((i) => i >= 0), 99);
-    if (top >= TRUMPS.normal.indexOf('DJ')) return 'höchster Trumpf ist der Karo-Bube';
+    if (top > TRUMPS.normal.indexOf('DJ')) return top === 99 ? 'kein Trumpf' : 'höchster Trumpf ist kleiner als der Karo-Bube';
     const kings = h.filter((c) => rankOf(c) === 'K').length;
     if (kings >= 5) return `${kings} Könige`;
     return null;
@@ -290,17 +290,17 @@ const DokoEngine = (() => {
     let V = 0; // Punkte der Gewinnerseite (ohne Sonderpunkte)
     const add = (text, n = 1) => { lines.push({ text, pts: n, party: winner }); V += n; };
     if (winner && solo) {
-      // Solo-Leiter: gewonnen 8, keine 90 12, keine 60 20, keine 30 28, schwarz 36; jeweils +4 wenn angesagt
-      const ladder = levels === 0 ? 8 : 4 + 8 * levels;
-      const sv = winner === 're' ? 'Solo gewonnen' : 'Solo verloren';
-      add(levels === 0 ? sv : `${sv}, ${LV[levels - 1]}`, ladder);
-      if (L[winner] >= 2) add(`${ANN_LABEL[winner][L[winner]]} angesagt (${PL(winner)})`, 4);
+      // Solo: gewonnen 8, jede weitere Zeile der Tabelle 4. Der Solist ist immer Re (die Alten).
+      add(winner === 're' ? 'Solo gewonnen' : 'Solo verloren', 8);
+      if (winner === 'contra') add('Gegen die Alten', 4);
+      for (let i = 0; i < levels; i++) add(LV[i], 4);
+      for (const p of ['re', 'contra']) for (let l = 2; l <= L[p]; l++) add(`${ANN_LABEL[p][l]} angesagt (${PL(p)})`, 4);
     } else if (winner) {
       add('Gewonnen');
       if (winner === 'contra') add('Gegen die Alten');
       for (let i = 0; i < levels; i++) add(LV[i]);
       for (const p of ['re', 'contra']) for (let l = 2; l <= L[p]; l++) add(`${ANN_LABEL[p][l]} angesagt (${PL(p)})`);
-      if (g.type === 'hochzeit') add(winner === 're' ? 'Hochzeit gewonnen' : 'Hochzeit verloren');
+      if (g.type === 'hochzeit' && winner === 're') add('Hochzeit gewonnen');
       if (g.type === 'armut') add(winner === 're' ? 'Trumpfabgabe gewonnen' : 'Trumpfabgabe verloren');
     }
 
@@ -326,8 +326,11 @@ const DokoEngine = (() => {
     // Ist der Saldo 0 oder kleiner (Verlierer haben mehr Sonderpunkte), ist es ein Nullspiel.
     const S = winner ? V + extras[winner] - extras[loser] : 0;
     const nullspiel = !winner || S <= 0;
-    const annMult = (L.re >= 1 ? 2 : 1) * (L.contra >= 1 ? 2 : 1); // Re ×2, Kontra ×2, beides ×4 (auch im Solo)
-    const m = Math.pow(2, g.bock || 0);
+    // Normalspiel: Re ×2, Kontra ×2, beides ×4. Solo: nur Kontra ×2, Re und Kontra ×4, Re allein ändert nichts.
+    const annMult = solo
+      ? (L.contra >= 1 ? (L.re >= 1 ? 4 : 2) : 1)
+      : (L.re >= 1 ? 2 : 1) * (L.contra >= 1 ? 2 : 1);
+    const m = g.bock ? 2 : 1; // Bockspiel verdoppelt alles (Bockrunden verlängern sich, sie stapeln sich nicht)
     const value = nullspiel ? 0 : S * annMult * m; // Punkte je Verlierer
     const soloLost = solo && winner === 'contra' && !nullspiel; // verlorenes Solo zählt dreifach
     const payers = nullspiel ? [] : [0, 1, 2, 3].filter((x) => partyOfSeat(x) === loser);
@@ -335,14 +338,27 @@ const DokoEngine = (() => {
     let label = TYPE_LABEL[g.type];
     if (g.stille) label = 'Stille Hochzeit';
     if (g.type === 'hochzeit' && g.hz.alone) label = 'Hochzeit (Solo)';
-    return { solo, eyes, tricks, winner, lines, V, extras, S, nullspiel, soloLost, annMult, m, value, payers, points, label, ann: { ...L } };
+    // Bock-Ereignisse: Nullspiel; durchgegangener Herz-Stich (nicht im angesagten Solo,
+    // wohl aber in stiller Hochzeit und Hochzeit ohne Partner). Jedes Ereignis bringt 4 Bockspiele.
+    const bockEvents = [];
+    if (nullspiel) bockEvents.push('Nullspiel');
+    if (!isSoloType(g.type)) g.tricks.forEach((t, i) => {
+      if (t.cards.every((p) => suitOf(p.card) === 'H' && !isTrump(p.card, kind))) bockEvents.push(`Herz-Stich (Stich ${i + 1})`);
+    });
+    return { solo, eyes, tricks, winner, lines, V, extras, S, nullspiel, soloLost, annMult, m, value, payers, points, label, ann: { ...L }, bockEvents, bockAdded: bockEvents.length * RULES.bockGames };
   }
 
   function finishGame(state) {
     const g = state.game;
     const r = scoreGame(g);
     g.result = r; g.phase = 'done';
-    state.games.push({ no: g.no, label: r.label, re: g.re.slice(), soloist: g.soloist, eyes: r.eyes, winner: r.winner, points: r.points, bock: g.bock });
+    state.games.push({ no: g.no, label: r.label, re: g.re.slice(), soloist: g.soloist, eyes: r.eyes, winner: r.winner, points: r.points, bock: g.bock ? 1 : 0, nullspiel: r.nullspiel, solo: r.solo });
+    // Bockrunde: ein Bockspiel ist verbraucht, außer es war ein Solo (das verlängert die Runde um 1)
+    if (g.bock && !r.solo) state.bockLeft = Math.max(0, state.bockLeft - 1);
+    if (r.bockAdded) {
+      state.bockLeft += r.bockAdded;
+      log(state, `Bock! ${r.bockEvents.join(', ')}: ${r.bockAdded} Bockspiele dazu, jetzt ${state.bockLeft} offen.`);
+    }
     const who = r.winner === 're' ? 'Re' : r.winner === 'contra' ? 'Kontra' : 'Niemand';
     const names = r.payers.map((s) => seatName(state, s)).join(' & ');
     log(state, `${who} gewinnt mit ${r.winner ? r.eyes[r.winner] : r.eyes.re} Augen. ${r.payers.length ? `${names} ${r.payers.length > 1 ? 'bekommen je' : 'bekommt'} ${r.points[r.payers[0]]} Punkte.` : 'Nullspiel, keine Punkte.'}`);
@@ -353,16 +369,17 @@ const DokoEngine = (() => {
     return true;
   }
 
-  function addBock(state) {
-    const g = state.game;
-    const startsNow = !g || (g.phase !== 'done' && g.tricks.length === 0 && g.current.length === 0);
-    const off = startsNow ? 0 : 1;
-    for (let i = 0; i < RULES.bockGames; i++) state.bock[off + i] = (state.bock[off + i] || 0) + 1;
-    if (g && startsNow) g.bock = (g.bock || 0) + 1;
+  // Altstände (Bock als Liste) in den Zähler offener Bockspiele übernehmen
+  function normalize(state) {
+    if (typeof state.bockLeft !== 'number') {
+      state.bockLeft = (state.bock || []).filter((x) => x > 0).length;
+      state.bock = [];
+    }
+    return state;
   }
 
   function apply(state0, seat, a) {
-    const state = clone(state0);
+    const state = normalize(clone(state0));
     const g = state.game;
     const err = (e) => ({ error: e });
     switch (a.t) {
@@ -486,14 +503,12 @@ const DokoEngine = (() => {
         break;
       }
       case 'bock': {
-        addBock(state);
-        log(state, `${seatName(state, seat)} sagt eine Bockrunde an.`);
+        return err('Bockrunden entstehen jetzt automatisch (Nullspiel, Herz-Stich).');
         break;
       }
       case 'next': {
         if (!g || g.phase !== 'done') return err('Das Spiel ist noch nicht vorbei.');
-        // Ein Solo zählt nicht zu den Bockspielen: das Bockspiel bleibt für das nächste Spiel stehen
-        if (!(g.result && g.result.solo && g.bock > 0)) state.bock.shift();
+        // Bockspiele wurden schon beim Abrechnen gezählt (siehe finishGame)
         state.dealer = (state.dealer + 1) % 4;
         deal(state, a.hands);
         break;
@@ -571,7 +586,7 @@ const DokoEngine = (() => {
   function viewFor(state, uid, onlineUids) {
     const me = state.seats.findIndex((s) => s && !s.bot && s.uid === uid);
     const v = {
-      v: state.v, rev: state.rev, dealer: state.dealer, bock: state.bock.slice(), games: clone(state.games),
+      v: state.v, rev: state.rev, dealer: state.dealer, bockLeft: typeof state.bockLeft === 'number' ? state.bockLeft : (state.bock || []).filter((x) => x > 0).length, games: clone(state.games),
       phase: state.phase, log: state.log.slice(), me,
       seats: state.seats.map((s, i) => (s ? { name: s.name, bot: !!s.bot, mine: i === me, online: s.bot || !onlineUids || onlineUids.includes(s.uid) } : null)),
       game: null,
@@ -648,7 +663,8 @@ const DokoEngine = (() => {
   }
 
   // Ein Zug des Bots, der gerade dran ist (oder null)
-  function botStep(state) {
+  function botStep(state0) {
+    const state = normalize(clone(state0));
     const g = state.game;
     if (state.phase !== 'game' || !g || g.phase === 'done') return null;
     const s = state.seats[g.turn];
@@ -660,7 +676,7 @@ const DokoEngine = (() => {
   }
   function botDelay(state) {
     const g = state.game;
-    return g && g.current.length === 0 && g.tricks.length ? 1500 : 850;
+    return g && g.current.length === 0 && g.tricks.length ? 2000 : 850; // fertiger Stich bleibt kurz liegen
   }
 
   function totals(state) {

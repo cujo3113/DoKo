@@ -1,6 +1,6 @@
 // Versionsnummer an den Dateinamen, damit Browser nie alte und neue Dateien mischen
-import E from './engine.js?v=9';
-import { CARD_DEFS, CARD_BODY } from './cards.js?v=9';
+import E from './engine.js?v=10';
+import { CARD_DEFS, CARD_BODY } from './cards.js?v=10';
 
   const $ = (id) => document.getElementById(id);
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -31,6 +31,9 @@ import { CARD_DEFS, CARD_BODY } from './cards.js?v=9';
   let full = null;       // nur im Übungsmodus: der komplette Spielstand
   let selected = [];
   let selKey = '';
+  let pendingSolo = null;   // Solo gewählt, aber noch nicht bestätigt
+  let trickClearAt = 0;     // bis wann der fertige Stich noch liegen bleibt
+  let showLast = false;     // letzten Stich ansehen
   let confirmReset = false;
 
   function nick() {
@@ -150,32 +153,119 @@ import { CARD_DEFS, CARD_BODY } from './cards.js?v=9';
       g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(gain, t + 0.005); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
       o.connect(g); g.connect(master); o.start(t); o.stop(t + dur + 0.02);
     }
+    // --- Bausteine für natürlichere Klänge ---
+    let pink = null, verb = null;
+    function extras() {
+      if (pink) return;
+      // rosa Rauschen (weicher als weißes, klingt mehr nach Papier und Filz)
+      pink = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate);
+      const d = pink.getChannelData(0);
+      let b0 = 0, b1 = 0, b2 = 0, b3 = 0, b4 = 0, b5 = 0, b6 = 0;
+      for (let i = 0; i < d.length; i++) {
+        const w = Math.random() * 2 - 1;
+        b0 = 0.99886 * b0 + w * 0.0555179; b1 = 0.99332 * b1 + w * 0.0750759; b2 = 0.969 * b2 + w * 0.153852;
+        b3 = 0.8665 * b3 + w * 0.3104856; b4 = 0.55 * b4 + w * 0.5329522; b5 = -0.7616 * b5 - w * 0.016898;
+        d[i] = (b0 + b1 + b2 + b3 + b4 + b5 + b6 + w * 0.5362) * 0.11; b6 = w * 0.115926;
+      }
+      // kleiner Raumhall: Tisch im Zimmer
+      const len = Math.floor(ctx.sampleRate * 0.35);
+      const ir = ctx.createBuffer(2, len, ctx.sampleRate);
+      for (let c = 0; c < 2; c++) { const x = ir.getChannelData(c); for (let i = 0; i < len; i++) x[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 3.2) * (i < 40 ? i / 40 : 1); }
+      verb = ctx.createConvolver(); verb.buffer = ir;
+      const wet = ctx.createGain(); wet.gain.value = 0.16;
+      verb.connect(wet); wet.connect(master);
+    }
+    function out(node) { node.connect(master); if (verb) node.connect(verb); }
+    // gefiltertes Rauschen mit Hüllkurve
+    function nz(t, { dur = 0.05, type = 'bandpass', f = 2000, f2 = null, q = 1, gain = 0.4, attack = 0.002, src = 'pink', curve = 'exp' }) {
+      const n = ctx.createBufferSource(); n.buffer = src === 'pink' ? pink : noiseBuf();
+      n.playbackRate.value = 0.9 + Math.random() * 0.2;
+      const fl = ctx.createBiquadFilter(); fl.type = type; fl.Q.value = q; fl.frequency.setValueAtTime(f, t);
+      if (f2) fl.frequency.exponentialRampToValueAtTime(f2, t + dur);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(gain, t + attack);
+      if (curve === 'lin') g.gain.linearRampToValueAtTime(0.0001, t + dur); else g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      n.connect(fl); fl.connect(g); out(g);
+      n.start(t, Math.random() * 1.5, dur + 0.05);
+    }
+    const noiseBuf = () => noise; // weißes Rauschen aus ensure()
+    // gedämpfte Eigenschwingungen (Holz)
+    function modes(t, list, level = 1) {
+      for (const [f, dec, g0] of list) {
+        const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.value = f * (0.98 + Math.random() * 0.04);
+        const g = ctx.createGain();
+        g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(g0 * level, t + 0.002); g.gain.exponentialRampToValueAtTime(0.0001, t + dec);
+        o.connect(g); out(g); o.start(t); o.stop(t + dec + 0.03);
+      }
+    }
+    // eine einzelne Karte, die beim Riffeln vom Daumen schnellt
+    function flap(t, level, bright = 1) {
+      nz(t, { src: 'white', type: 'bandpass', f: (1800 + Math.random() * 2600) * bright, q: 1.6, dur: 0.006 + Math.random() * 0.006, gain: 0.32 * level, attack: 0.0008 });
+      nz(t, { type: 'lowpass', f: 900, dur: 0.012, gain: 0.12 * level, attack: 0.001 });
+    }
+    // Karte landet auf dem Filz
+    function cardDown(t, level = 1) {
+      nz(t - 0.045, { type: 'bandpass', f: 500, f2: 1600, q: 0.7, dur: 0.05, gain: 0.07 * level, attack: 0.04, curve: 'lin' }); // Luftzug
+      nz(t, { src: 'white', type: 'highpass', f: 1800, dur: 0.009, gain: 0.22 * level, attack: 0.0008 });              // Kante
+      nz(t, { type: 'lowpass', f: 320, dur: 0.05, gain: 0.55 * level, attack: 0.001 });                                   // Aufschlag
+      nz(t + 0.004, { type: 'bandpass', f: 2600, q: 2, dur: 0.03, gain: 0.08 * level });                                    // Papier
+    }
+    // Hand wischt Karten über den Filz
+    function slide(t, dur, level = 1) {
+      nz(t, { type: 'bandpass', f: 900 + Math.random() * 300, f2: 1700 + Math.random() * 400, q: 0.9, dur, gain: 0.16 * level, attack: dur * 0.4, curve: 'lin' });
+    }
+    function riffle(t0) {
+      // zwei Hälften schnellen ineinander: langsam - schnell - langsam, mit Anschwellen
+      const n = 46 + Math.floor(Math.random() * 10);
+      let t = t0;
+      for (let i = 0; i < n; i++) {
+        const x = i / (n - 1);
+        const env = Math.sin(Math.PI * Math.min(1, x * 1.15)) * 0.8 + 0.25;
+        flap(t, env, 0.9 + x * 0.25);
+        t += (0.026 - 0.015 * Math.sin(Math.PI * x)) * (0.85 + Math.random() * 0.3);
+      }
+      nz(t0, { type: 'lowpass', f: 650, dur: t - t0, gain: 0.06, attack: (t - t0) * 0.5, curve: 'lin' }); // Grundrauschen der Biegung
+      // Brücke: Karten fallen zusammen
+      let u = t + 0.08;
+      for (let i = 0; i < 18; i++) { flap(u, 0.45 * (1 - i / 22), 0.65); u += 0.012 + Math.random() * 0.008; }
+      // Stapel auf dem Tisch geradeklopfen
+      cardDown(u + 0.12, 0.8); cardDown(u + 0.26, 0.6);
+      return u + 0.4;
+    }
     const fx = {
-      card() { const t = ctx.currentTime; burst(t, { f: 2200, q: 0.7, dur: 0.07, gain: 0.55 }); burst(t + 0.01, { type: 'lowpass', f: 500, dur: 0.06, gain: 0.5 }); tone(t + 0.008, { f: 140, f2: 60, dur: 0.07, gain: 0.25 }); },
-      collect() { const t = ctx.currentTime; burst(t, { f: 700, f2: 3200, q: 0.9, dur: 0.28, gain: 0.32, attack: 0.06 }); burst(t + 0.2, { type: 'lowpass', f: 600, dur: 0.06, gain: 0.35 }); },
-      shuffle() {
-        let t = ctx.currentTime + 0.05;
-        for (let r = 0; r < 2; r++) {
-          // Riffeln: viele kurze Klicks, erst langsam, dann schneller
-          const n = 34;
-          for (let i = 0; i < n; i++) { const step = 0.034 - 0.018 * (i / n); burst(t, { type: 'highpass', f: 2600 + Math.random() * 1500, q: 0.6, dur: 0.018, gain: 0.25 + Math.random() * 0.2 }); t += step * (0.8 + Math.random() * 0.4); }
-          // Zusammenschieben
-          burst(t + 0.04, { f: 1200, f2: 3000, q: 0.7, dur: 0.22, gain: 0.3, attack: 0.03 });
-          burst(t + 0.27, { type: 'lowpass', f: 450, dur: 0.07, gain: 0.45 });
-          t += 0.55;
-        }
+      card() { extras(); cardDown(ctx.currentTime + 0.05, 0.9 + Math.random() * 0.2); },
+      collect() {
+        extras(); const t = ctx.currentTime + 0.02;
+        slide(t, 0.11, 0.8); slide(t + 0.07, 0.1, 0.7); slide(t + 0.14, 0.13, 0.9);
+        cardDown(t + 0.3, 0.55);
       },
-      knock() { const t = ctx.currentTime; for (const d of [0, 0.15]) { tone(t + d, { f: 110, f2: 55, dur: 0.12, gain: 0.5 }); burst(t + d, { type: 'lowpass', f: 900, dur: 0.05, gain: 0.5 }); } },
-      turn() { const t = ctx.currentTime; tone(t, { f: 988, dur: 0.18, gain: 0.07 }); tone(t + 0.09, { f: 1319, dur: 0.22, gain: 0.05 }); },
-      end() { const t = ctx.currentTime; [523, 659, 784].forEach((f, i) => tone(t + i * 0.11, { f, dur: 0.5, gain: 0.08, type: 'triangle' })); },
+      shuffle() {
+        extras(); let t = ctx.currentTime + 0.05;
+        t = riffle(t);
+        slide(t + 0.05, 0.25, 0.7); // abheben
+        riffle(t + 0.4);
+      },
+      knock() {
+        extras(); const t = ctx.currentTime + 0.02;
+        const wood = [[180, 0.11, 0.55], [395, 0.07, 0.32], [720, 0.045, 0.22], [1180, 0.03, 0.12]];
+        [[0, 1], [0.15, 0.8]].forEach(([d, lv]) => {
+          modes(t + d, wood, lv);
+          nz(t + d, { src: 'white', type: 'highpass', f: 2500, dur: 0.005, gain: 0.18 * lv, attack: 0.0006 });
+          nz(t + d, { type: 'lowpass', f: 260, dur: 0.04, gain: 0.35 * lv });
+        });
+      },
+      turn() { extras(); const t = ctx.currentTime; modes(t, [[880, 0.35, 0.05], [3520, 0.06, 0.012]]); modes(t + 0.1, [[1175, 0.4, 0.04], [4700, 0.05, 0.008]]); },
+      end() { extras(); const t = ctx.currentTime; [523, 659, 784].forEach((f, i) => modes(t + i * 0.13, [[f, 0.9, 0.07], [f * 4, 0.12, 0.012]])); },
     };
     function play(name) { if (ready() && fx[name]) try { fx[name](); } catch (e) {} }
     function setOn(v) { on = v; try { localStorage.setItem('doko-sound', v ? 'on' : 'off'); } catch (e) {} if (v) ensure(); }
     // Browser spielen Ton erst nach einer Interaktion: beim ersten Klick freischalten
     ['pointerdown', 'keydown'].forEach((ev) => document.addEventListener(ev, () => { if (on) ensure(); }, { capture: true }));
-    return { play, setOn, isOn: () => on };
+    return { play, setOn, isOn: () => on, _fx: fx, _ensure: ensure };
   })();
 
+  if (params.has('debug')) window.__doko = { Sound };
   function renderSoundBtn() {
     const b = $('soundbtn'); if (!b) return;
     const on = Sound.isOn();
@@ -241,7 +331,12 @@ import { CARD_DEFS, CARD_BODY } from './cards.js?v=9';
     if (!p || !snap) return;
     const m = mySeat();
     if (snap.deal !== p.deal) { Sound.play('shuffle'); return; }
-    if (snap.tricks > p.tricks) { Sound.play('card'); setTimeout(() => Sound.play('collect'), 650); }
+    if (snap.tricks > p.tricks) {
+      Sound.play('card'); setTimeout(() => Sound.play('collect'), 1500);
+      // fertigen Stich kurz liegen lassen, dann automatisch abräumen
+      trickClearAt = Date.now() + 1700; showLast = false;
+      clearTimeout(soundsFor.t); soundsFor.t = setTimeout(() => { try { renderFelt(); } catch (e) { showError('felt', e); } }, 1750);
+    }
     else if (snap.cur > p.cur) Sound.play('card');
     if (snap.ann > p.ann) setTimeout(() => Sound.play('knock'), 60);
     if (snap.phase === 'done' && p.phase !== 'done') setTimeout(() => Sound.play('end'), 900);
@@ -252,7 +347,7 @@ import { CARD_DEFS, CARD_BODY } from './cards.js?v=9';
     soundsFor(state);
     const g = state && state.game;
     const k = g ? `${g.no}-${g.phase}-${g.turn}` : 'none';
-    if (k !== selKey) { selected = []; selKey = k; }
+    if (k !== selKey) { selected = []; selKey = k; pendingSolo = null; }
     render();
     scheduleBots();
   }
@@ -307,13 +402,47 @@ import { CARD_DEFS, CARD_BODY } from './cards.js?v=9';
       + `<span class="row"><span>Spielstand (${state.games.length} ${state.games.length === 1 ? 'Spiel' : 'Spiele'})</span><span>${fmt(total)}</span></span></span></span>`;
   }
 
+  const DECK_SVG = '<svg viewBox="0 0 16 16" aria-hidden="true"><rect x="4.5" y="1.5" width="9" height="12" rx="1.5" fill="#fff" stroke="#1a1a1a"/><rect x="2.5" y="2.5" width="9" height="12" rx="1.5" fill="#fff" stroke="#1a1a1a"/><path d="M7 6.5l2 2-2 2-2-2z" fill="#c8102e"/></svg>';
+  // Geber, wer rauskommt, wer am Zug ist
+  function markers(g, s) {
+    const out = [];
+    if (!g) return out;
+    if (g.dealer === s) out.push(`<span class="chip geber" title="Geber">${DECK_SVG}Geber</span>`);
+    const first = (g.dealer + 1) % 4;
+    if (s === first && (g.phase === 'vorbehalt' || g.phase.startsWith('armut') || (g.phase === 'play' && !g.tricks.length && !g.current.length))) out.push('<span class="chip lead" title="spielt die erste Karte aus">▶ kommt raus</span>');
+    else if (g.phase === 'play' && g.turn === s && !g.current.length && g.tricks.length) out.push('<span class="chip lead">▶ spielt aus</span>');
+    if (g.phase !== 'done' && g.turn === s) out.push('<span class="chip zug">am Zug</span>');
+    return out;
+  }
+
+  // Große Anzeige oben: welches Spiel läuft gerade?
+  function bannerHTML(g) {
+    if (!state || state.phase === 'lobby' || !g) return '';
+    const m = mySeat();
+    let cls = 'gesund', title = 'Normalspiel', sub = '';
+    if (g.phase === 'vorbehalt') { cls = ''; title = 'Vorbehalte'; sub = 'Gesund oder Vorbehalt?'; }
+    else if (g.type === 'armut' || g.phase.startsWith('armut')) { cls = 'armut'; title = 'Trumpfabgabe'; sub = g.armut && g.armut.taker !== null ? `${seatName(g.armut.poor)} & ${seatName(g.armut.taker)}` : `von ${seatName(g.armut.poor)}`; }
+    else if (g.type === 'hochzeit') {
+      if (g.hz.alone) { cls = 'solo'; title = 'Hochzeit ohne Partner'; sub = `Solo von ${seatName(g.hz.bride)}`; }
+      else { cls = 'hochzeit'; title = 'Hochzeit'; sub = g.hz.done ? `${seatName(g.hz.bride)} & ${seatName(g.hz.partner)}` : `${seatName(g.hz.bride)} sucht Partner (erster fremder Fehlstich bis Stich 3)`; }
+    } else if (g.type && g.type.startsWith('solo_')) { cls = 'solo'; title = E.TYPE_LABEL[g.type]; sub = `von ${seatName(g.soloist)}`; }
+    else if (g.stille && (m === g.soloist || g.phase === 'done')) { cls = 'solo'; title = 'Stille Hochzeit'; sub = g.phase === 'done' ? `von ${seatName(g.soloist)}` : 'du spielst heimlich allein'; }
+    else { title = 'Gesund'; sub = 'Normalspiel'; }
+    const right = [];
+    if (g.ann.re) right.push(`<span class="chip re">${E.ANN_LABEL.re[g.ann.re]}${g.ann.re > 1 ? ' (Re)' : ''}</span>`);
+    if (g.ann.contra) right.push(`<span class="chip contra">${E.ANN_LABEL.contra[g.ann.contra]}${g.ann.contra > 1 ? ' (Kontra)' : ''}</span>`);
+    if (g.bock) right.push(`<span class="chip bock" title="Alle Punkte zählen doppelt">BOCK ×2 · noch ${state.bockLeft}</span>`);
+    if (g.phase === 'play') right.push(`<span class="chip">Stich ${Math.min(10, g.tricks.length + 1)}/10</span>`);
+    return `<div class="banner"><span class="gtype ${cls}">${esc(title)}</span>${sub ? `<span class="gsub">${esc(sub)}</span>` : ''}<span class="gright">${right.join('')}</span></div>`;
+  }
+
   function seatTag(s, pos) {
     const st = state.seats[s];
     const g = state.game;
     const turn = g && g.phase !== 'done' && g.turn === s;
     const party = g ? g.known[s] : null;
     const chips = [];
-    if (g && g.dealer === s) chips.push('<span class="chip geber">Geber</span>');
+    chips.push(...markers(g, s));
     if (st && st.bot) chips.push('<span class="chip bot">Bot</span>');
     if (online && st && !st.bot && !st.online) chips.push('<span class="chip off">offline</span>');
     const meta = [];
@@ -332,16 +461,25 @@ import { CARD_DEFS, CARD_BODY } from './cards.js?v=9';
 
   function trickHTML(g) {
     let cards = g.current, caption = '', winner = null;
-    if (!cards.length && g.tricks.length) {
-      const t = g.tricks[g.tricks.length - 1];
-      cards = t.cards; winner = t.winner;
-      caption = `Stich ${g.tricks.length} an ${esc(seatName(t.winner))} · ${t.points} Augen`;
+    const lastT = g.tricks.length ? g.tricks[g.tricks.length - 1] : null;
+    const kind = E.kindOf(g.type);
+    if (!cards.length && lastT && Date.now() < trickClearAt) {
+      // fertiger Stich bleibt kurz liegen, dann wird automatisch abgeräumt
+      cards = lastT.cards; winner = lastT.winner;
+      caption = `Stich ${g.tricks.length} an ${esc(seatName(lastT.winner))} · ${lastT.points} Augen`;
     } else if (!cards.length) {
       caption = g.turn === mySeat() ? 'Du spielst aus.' : `${esc(seatName(g.turn))} spielt aus.`;
     }
-    const kind = E.kindOf(g.type);
     const slots = cards.map((p) => `<div class="slot p${posOf(p.seat)}${p.seat === winner ? ' win' : ''}">${cardHTML(p.card, { trump: E.isTrump(p.card, kind) })}</div>`).join('');
-    return `<div class="trick" aria-live="polite">${slots}<div class="trick-caption">${caption}</div></div>`;
+    let last = '';
+    if (lastT && cards !== lastT.cards) {
+      last = `<button class="mini lastbtn" data-act="lasttrick" aria-pressed="${showLast}">${showLast ? 'Schließen' : 'Letzter Stich'}</button>`;
+      if (showLast) {
+        last += `<div class="lastview" role="dialog" aria-label="Letzter Stich"><div class="row4">${lastT.cards.map((p) => `<figure class="${p.seat === lastT.winner ? 'win' : ''}">${cardHTML(p.card, { trump: E.isTrump(p.card, kind) })}<figcaption>${esc(seatName(p.seat))}</figcaption></figure>`).join('')}</div>
+          <p class="muted">Stich ${g.tricks.length} an <strong>${esc(seatName(lastT.winner))}</strong> · ${lastT.points} Augen</p></div>`;
+      }
+    }
+    return `<div class="trick" aria-live="polite">${last}${slots}<div class="trick-caption">${caption}</div></div>`;
   }
 
   function lobbyHTML() {
@@ -371,6 +509,12 @@ import { CARD_DEFS, CARD_BODY } from './cards.js?v=9';
     const m = mySeat();
     const order = [1, 2, 3, 4].map((i) => (g.dealer + i) % 4);
     const status = order.map((s) => `<span class="chip">${esc(seatName(s))}: ${g.decl[s] ? (g.decl[s] === 'gesund' ? 'gesund' : 'Vorbehalt') : s === g.turn ? 'überlegt …' : '–'}</span>`).join(' ');
+    if (g.turn === m && pendingSolo) {
+      const label = E.DECL_LABEL[pendingSolo];
+      return `<div class="panel confirm"><h2>${esc(label)} spielen?</h2>
+        <p class="muted">Bist du sicher? Ein angesagtes Solo kann nicht zurückgenommen werden.</p>
+        <div class="btnrow"><button class="btn primary" data-decl="${pendingSolo}" data-sure="1">Ja, ${esc(label)} spielen</button><button class="btn" data-act="cancelsolo">Abbrechen</button></div></div>`;
+    }
     if (g.turn === m) {
       const o = g.declOptions;
       const nT = E.countTrumps(g.hands[m]);
@@ -411,7 +555,7 @@ import { CARD_DEFS, CARD_BODY } from './cards.js?v=9';
       return `<div class="panel"><div class="result-head"><h2>Spiel beendet</h2><span class="muted">${esc((r && r.label) || '')}</span></div>
         <p class="muted">Dieses Spiel wurde noch nach der alten Zählung abgerechnet. Ab dem nächsten Spiel gilt die neue Zählung.</p>
         <div class="scores">${[0, 1, 2, 3].map((s) => `<div><span>${esc(seatName(s))}</span><b>${pts[s] || '–'}</b></div>`).join('')}</div>
-        <div class="btnrow"><button class="btn primary" data-act="next"${readOnly ? ' disabled' : ''}>Nächstes Spiel</button><button class="btn" data-act="bock"${readOnly ? ' disabled' : ''}>Bockrunde ansagen</button></div></div>`;
+        <div class="btnrow"><button class="btn primary" data-act="next"${readOnly ? ' disabled' : ''}>Nächstes Spiel</button></div></div>`;
     }
     const reNames = g.re.map(seatName).join(' & ');
     const coNames = [0, 1, 2, 3].filter((s) => !g.re.includes(s)).map(seatName).join(' & ');
@@ -435,8 +579,9 @@ import { CARD_DEFS, CARD_BODY } from './cards.js?v=9';
       <p><strong>Re</strong> (${esc(reNames)}): ${r.eyes.re} Augen · <strong>Kontra</strong> (${esc(coNames)}): ${r.eyes.contra} Augen</p>
       <ul class="lines">${lines}</ul>
       <p>${calc}</p>
+      ${r.bockEvents && r.bockEvents.length ? `<p class="bockmsg">Bock! ${esc(r.bockEvents.join(', '))}: ${r.bockAdded} Bockspiele dazu, jetzt ${state.bockLeft} offen.</p>` : ''}
       <div class="scores">${scores}</div>
-      <div class="btnrow"><button class="btn primary" data-act="next"${readOnly ? ' disabled' : ''}>Nächstes Spiel</button><button class="btn" data-act="bock"${readOnly ? ' disabled' : ''}>Bockrunde ansagen</button></div>
+      <div class="btnrow"><button class="btn primary" data-act="next"${readOnly ? ' disabled' : ''}>Nächstes Spiel</button></div>
     </div>`;
   }
 
@@ -458,7 +603,7 @@ import { CARD_DEFS, CARD_BODY } from './cards.js?v=9';
     const ann = opts.map((L) => `<button class="annbtn ${party}" data-ann="${L}">${E.ANN_LABEL[party][L]}</button>`).join('');
     const pchip = party ? `<span class="chip ${party}">${party === 're' ? 'Re' : 'Kontra'}</span>` : '';
     const mine = g ? annText(g, m).map((t) => `<span class="chip ann">${esc(t)}</span>`).join('') : '';
-    const geber = g && g.dealer === m ? '<span class="chip geber">Geber</span>' : '';
+    const geber = markers(g, m).join(' ');
     const sorter = g && g.phase === 'vorbehalt' && g.hands[m].length
       ? `<span class="sortbar" role="group" aria-label="Karten vorsortieren">Sortieren: ${SORTS.map(([k, l]) => `<button data-sort="${k}" aria-pressed="${sortKind() === k}">${l}</button>`).join('')}</span>` : '';
     const myStat = g && (g.phase === 'play' || g.phase === 'done') ? `<span class="seat-meta">${statHTML(m)}</span>` : '';
@@ -511,7 +656,7 @@ import { CARD_DEFS, CARD_BODY } from './cards.js?v=9';
     else mid = trickHTML(g);
     const others = [1, 2, 3].map((p) => { const s = (base() + p) % 4; return seatTag(s, p); }).join('');
     const nickEl = $('nick'); const keepNick = nickEl ? nickEl.value : null;
-    felt.innerHTML = `${others}<div class="mid">${mid}</div>${meBar(g)}${handHTML(g)}`;
+    felt.innerHTML = `${bannerHTML(g)}${others}<div class="mid">${mid}</div>${meBar(g)}${handHTML(g)}`;
     if (keepNick !== null && $('nick')) $('nick').value = keepNick;
   }
 
@@ -525,12 +670,13 @@ import { CARD_DEFS, CARD_BODY } from './cards.js?v=9';
     if (g) {
       const reA = g.ann.re ? E.ANN_LABEL.re[g.ann.re] + (g.ann.re > 1 ? ' (Re)' : '') : '–';
       const coA = g.ann.contra ? E.ANN_LABEL.contra[g.ann.contra] + (g.ann.contra > 1 ? ' (Kontra)' : '') : '–';
-      const bockNow = g.bock ? `×${Math.pow(2, g.bock)}` : 'nein';
-      const upcoming = state.bock.slice(1).filter((x) => x > 0).length;
+      const bl = state.bockLeft || 0;
+      const bockNow = g.bock ? `ja, alles ×2 · noch ${bl} Bockspiel${bl === 1 ? '' : 'e'} inkl. diesem` : (bl ? `nein · ${bl} Bockspiele stehen an` : 'nein');
+      const upcoming = 0;
       info = `<dl class="kv"><dt>Spiel</dt><dd>${g.no}</dd><dt>Geber</dt><dd>${esc(seatName(g.dealer))}</dd><dt>Spielart</dt><dd>${esc(publicType(g, m))}</dd>
         <dt>Re-Seite</dt><dd>${esc(reA)}</dd><dt>Kontra-Seite</dt><dd>${esc(coA)}</dd><dt>Bock</dt><dd>${bockNow}${upcoming ? ` · noch ${upcoming} Bockspiel${upcoming === 1 ? '' : 'e'} danach` : ''}</dd></dl>`;
     } else {
-      const pending = state.bock.filter((x) => x > 0).length;
+      const pending = state.bockLeft || 0;
       info = `<p class="notice">Noch kein Spiel gestartet.${pending ? ` ${pending} Bockspiele stehen an.` : ''}</p>`;
     }
     const run = [0, 0, 0, 0];
@@ -549,23 +695,23 @@ import { CARD_DEFS, CARD_BODY } from './cards.js?v=9';
     const n2 = $('nick2'); const keep2 = n2 ? { v: n2.value, f: document.activeElement === n2 } : null;
     side.innerHTML = `
       <div class="box"><h3>Dieses Spiel</h3>${info}
-        <div class="btnrow"><button class="sidebtn" data-act="bock"${readOnly || !state.seats.some((s) => s) ? ' disabled' : ''}>Bockrunde ansagen</button>${m >= 0 && state.phase === 'game' ? `<button class="sidebtn" data-leave="${m}">Platz an Bot abgeben</button>` : ''}</div></div>
-      <div class="box"><h3>Spielzettel <small>${state.games.length ? state.games.length + (state.games.length === 1 ? ' Spiel' : ' Spiele') + ' · Verliererpunkte' : ''}</small></h3><div class="zettel" id="zettel">${zettel}</div></div>
+        <div class="btnrow">${m >= 0 && state.phase === 'game' ? `<button class="sidebtn" data-leave="${m}">Platz an Bot abgeben</button>` : ''}</div></div>
+      <div class="box"><h3>Spielzettel <small>${state.games.length ? state.games.length + (state.games.length === 1 ? ' Spiel' : ' Spiele') + ' · Verliererpunkte' : ''}</small></h3><div class="zettel" id="zettel">${zettel}</div>${state.games.length ? '<div class="btnrow"><button class="sidebtn" data-act="pdf">Spielzettel als PDF</button></div>' : ''}</div>
       <div class="box"><h3>Verlauf</h3><ul class="log">${logItems || '<li>Noch nichts passiert.</li>'}</ul></div>
       <div class="box"><details class="rules"><summary>Hausregeln in dieser App</summary><ul>
         <li>40 Karten ohne Neunen, 10 pro Spieler. Trumpf: Herz 10, Damen, Buben, Karo Ass, 10, König. Bei zwei gleichen Karten sticht die erste.</li>
         <li>Soli: Trumpfsolo (Karo-Solo), Damensolo, Bubensolo, Königssolo. Ein Solo hat Vorrang vor Hochzeit und Trumpfabgabe, und es spielt wie immer der Spieler links vom Geber aus.</li>
         <li>Vorsortieren: Während der Vorbehaltsabfrage kannst du deine Karten nach Normalspiel oder einem Solo sortieren lassen. Das ist keine Ansage, das Spiel sagst du danach wie gewohnt an.</li>
-        <li>Schmeißen: Ist dein höchster Trumpf der Karo-Bube (oder hast du gar keinen höheren) oder hast du mindestens 5 Könige, kannst du während der Vorbehaltsabfrage jederzeit schmeißen. Derselbe Geber gibt neu, das Spiel zählt nicht.</li>
+        <li>Schmeißen: Ist dein höchster Trumpf kleiner als der Karo-Bube (oder hast du gar keinen Trumpf) oder hast du mindestens 5 Könige, kannst du während der Vorbehaltsabfrage jederzeit schmeißen. Derselbe Geber gibt neu, das Spiel zählt nicht.</li>
         <li>Hochzeit: Der erste fremde Fehlstich (Fehlfarbe ausgespielt, ein anderer gewinnt) in den ersten drei Stichen macht dessen Gewinner zum Partner. Trumpfstiche zählen nicht. Klappt das nicht, spielt die Hochzeit ein Solo.</li>
         <li>Stille Hochzeit: Beide Kreuz-Damen und „gesund“ gesagt. Wird wie ein Solo abgerechnet.</li>
         <li>Trumpfabgabe: Bei höchstens 3 Trümpfen gibst du alle Trümpfe (auf 3 Karten aufgefüllt) ab. Wer annimmt, gibt 3 Karten zurück und spielt mit dir Re. Nimmt keiner, wird neu gegeben.</li>
         <li>Ansagen: Re/Kontra bis zur 2. eigenen Karte (Erwiderung eine Karte länger), keine 90 bis zur 3., keine 60 bis zur 4., keine 30 bis zur 5., schwarz bis zur 6. Bei der Hochzeit beginnen die Fristen direkt nach dem Klärungsstich neu.</li>
         <li>Zählung: Punkte bekommen immer die Verlierer, jeder Punkt kostet 5 Cent.</li>
-        <li>Normalspiel: Gewonnen 1, gegen die Alten 1, keine 90/60/30/schwarz je 1, jede erfüllte Absage („keine 90 angesagt“ usw.) 1, Hochzeit bzw. Trumpfabgabe gewonnen oder verloren 1. Re angesagt verdoppelt die Summe, Kontra angesagt verdoppelt sie, beides vervierfacht.</li>
+        <li>Normalspiel: Gewonnen 1, gegen die Alten 1, keine 90/60/30/schwarz je 1, jede erfüllte Absage („keine 90 angesagt“ usw.) 1, Hochzeit gewonnen 1, Trumpfabgabe gewonnen oder verloren 1. Re angesagt verdoppelt die Summe, Kontra angesagt verdoppelt sie, beides vervierfacht.</li>
         <li>Sonderpunkte (nur ohne Solo, je 1 für die Partei): Doppelkopf (Stich mit mindestens 40 Augen), Herz-Stich durchgegangen, Karlchen gewinnt den letzten Stich, Karlchen gefangen, Fuchs gefangen, Fuchs gewinnt den letzten Stich, beide Kreuz-Damen in einem Stich (für Kontra). Sonderpunkte der Verlierer werden abgezogen. Haben die Verlierer mindestens so viele Sonderpunkte wie die Gewinner Punkte, ist es ein Nullspiel.</li>
-        <li>Solo (auch stille Hochzeit und Hochzeit ohne Partner): gewonnen 8, keine 90 12, keine 60 20, keine 30 28, schwarz 36, mit erfüllter Absage jeweils 4 mehr (16, 24, 32, 40). Re angesagt ×2, Kontra angesagt ×2, beides ×4. Gewinnt der Solist, bekommt jeder Gegenspieler den Wert; verliert er, bekommt er den dreifachen Wert.</li>
-        <li>Bockrunde: Die nächsten 4 Spiele zählen doppelt (inklusive Re/Kontra), mehrere Bockrunden stapeln sich. Ein Solo zählt in der Bockrunde doppelt, verbraucht aber kein Bockspiel. Vor der ersten Karte angesagt, zählt schon das laufende Spiel.</li>
+        <li>Solo (auch stille Hochzeit und Hochzeit ohne Partner): gewonnen 8, jede weitere Zeile 4 (keine 90, keine 90 angesagt, keine 60 …). Verliert der Solist, kommt „gegen die Alten“ mit 4 dazu und alles zählt dreifach. Kontra angesagt verdoppelt, Re und Kontra vervierfacht, Re allein ändert nichts. Ein Solo muss bestätigt werden.</li>
+        <li>Bockrunde: entsteht automatisch. Jedes Nullspiel und jeder durchgegangene Herz-Stich (nicht im angesagten Solo, wohl aber bei stiller Hochzeit und Hochzeit ohne Partner) bringt 4 Bockspiele dazu. Ein Bockspiel verdoppelt alle Punkte. Ein Solo in der Bockrunde zählt doppelt, verbraucht aber kein Bockspiel.</li>
       </ul></details></div>
       <div class="box"><h3>Tisch</h3>
         <form class="btnrow" id="nameform"><label class="namelabel" for="nick2">Dein Name</label><input id="nick2" class="nameinput" maxlength="20" autocomplete="nickname" placeholder="Name eintragen" value="${esc(m >= 0 ? seatName(m) : nick())}"><button class="sidebtn" type="submit">${m >= 0 ? 'Name ändern' : 'Merken'}</button></form>
@@ -596,6 +742,76 @@ import { CARD_DEFS, CARD_BODY } from './cards.js?v=9';
     try { renderSide(); } catch (e) { showError('side', e); }
   }
 
+  // ---------- Spielzettel als PDF ----------
+  function loadJsPdf() {
+    if (window.jspdf) return Promise.resolve(window.jspdf);
+    return new Promise((resolve, reject) => {
+      const sc = document.createElement('script');
+      sc.src = './vendor/jspdf.umd.min.js?v=1';
+      sc.onload = () => (window.jspdf ? resolve(window.jspdf) : reject(new Error('jsPDF fehlt')));
+      sc.onerror = () => reject(new Error('jsPDF konnte nicht geladen werden'));
+      document.head.appendChild(sc);
+    });
+  }
+  async function downloadPdf() {
+    if (!state || !state.games.length) { toast('Noch keine Spiele auf dem Zettel.'); return; }
+    let jsPDF;
+    try { ({ jsPDF } = await loadJsPdf()); } catch (e) { toast('Das PDF-Modul ließ sich nicht laden. Bitte Seite neu laden.'); return; }
+    const doc = new jsPDF({ unit: 'mm', format: 'a4' });
+    const names = [0, 1, 2, 3].map(seatName);
+    const now = new Date();
+    const stamp = now.toLocaleString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+    const L = 14, R = 196, W = R - L;
+    const col = { nr: L, spiel: L + 9, bock: L + 62, p0: L + 76 };
+    const pw = (R - col.p0) / 4;
+    const px = (i) => col.p0 + pw * (i + 1) - 2; // rechtsbündig
+    const ink = [35, 58, 99], grey = [110, 120, 115], green = [21, 68, 52];
+    let y = 18;
+    const header = () => {
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(18); doc.setTextColor(...green);
+      doc.text('Doko-Stammtisch – Spielzettel', L, y); y += 7;
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(9.5); doc.setTextColor(...grey);
+      doc.text(`Tisch „${TABLE}“ · Stand ${stamp} · Punkte bekommen die Verlierer · 1 Punkt = ${E.RULES.centPerPoint} Cent`, L, y); y += 8;
+      doc.setFillColor(...green); doc.rect(L, y - 5, W, 8, 'F');
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(9.5); doc.setTextColor(255, 255, 255);
+      doc.text('Nr', col.nr + 1, y); doc.text('Spiel', col.spiel, y); doc.text('Bock', col.bock, y);
+      names.forEach((n, i) => doc.text(doc.splitTextToSize(n, pw - 3)[0], px(i), y, { align: 'right' }));
+      y += 7;
+    };
+    header();
+    const run = [0, 0, 0, 0];
+    state.games.forEach((x, k) => {
+      if (y > 272) { doc.addPage(); y = 18; header(); }
+      x.points.forEach((p, i) => (run[i] += p));
+      if (k % 2 === 0) { doc.setFillColor(242, 246, 243); doc.rect(L, y - 4.6, W, 7, 'F'); }
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(9.5); doc.setTextColor(40, 40, 40);
+      doc.text(String(x.no), col.nr + 1, y);
+      doc.text(doc.splitTextToSize(x.label || '', col.bock - col.spiel - 2)[0], col.spiel, y);
+      if (x.bock) { doc.setTextColor(192, 57, 43); doc.text('×2', col.bock, y); }
+      x.points.forEach((p, i) => {
+        doc.setFont('helvetica', 'bold'); doc.setTextColor(...ink);
+        doc.text(String(run[i]), px(i) - 9, y, { align: 'right' });
+        doc.setFont('helvetica', 'normal'); doc.setTextColor(...grey); doc.setFontSize(8);
+        doc.text(p ? `+${p}` : '·', px(i), y, { align: 'right' });
+        doc.setFontSize(9.5);
+      });
+      y += 7;
+    });
+    if (y > 262) { doc.addPage(); y = 18; header(); }
+    doc.setDrawColor(...green); doc.setLineWidth(0.6); doc.line(L, y - 3, R, y - 3); y += 3;
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(10.5); doc.setTextColor(...green);
+    doc.text('Summe Punkte', col.spiel, y);
+    run.forEach((v, i) => doc.text(String(v), px(i), y, { align: 'right' })); y += 7;
+    doc.text('Zu zahlen', col.spiel, y);
+    run.forEach((v, i) => doc.text(E.euro(v).replace(/ /g, ' '), px(i), y, { align: 'right' })); y += 10;
+    const total = run.reduce((a, b) => a + b, 0);
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(...grey);
+    doc.text(`${state.games.length} ${state.games.length === 1 ? "Spiel" : "Spiele"} · zusammen ${total} Punkte = ${E.euro(total).replace(/ /g, ' ')}`, L, y);
+    const file = `Spielzettel-${TABLE}-${now.toISOString().slice(0, 10)}.pdf`;
+    doc.save(file);
+    toast('PDF wird heruntergeladen.');
+  }
+
   // ---------- Eingaben ----------
   document.addEventListener('click', (ev) => {
     const b = ev.target.closest('button'); if (!b || b.disabled) return;
@@ -607,7 +823,8 @@ import { CARD_DEFS, CARD_BODY } from './cards.js?v=9';
     if (d.leave !== undefined) return act({ t: 'leave', seat: +d.leave });
     if (d.kick !== undefined) return act({ t: 'kick', seat: +d.kick });
     if (d.sort) { sortPref = { game: dealSig(), kind: d.sort }; return renderFelt(); }
-    if (d.decl) return act({ t: 'decl', choice: d.decl });
+    if (d.decl && d.decl.startsWith('solo_') && !d.sure) { pendingSolo = d.decl; return renderFelt(); }
+    if (d.decl) { pendingSolo = null; return act({ t: 'decl', choice: d.decl }); }
     if (d.armut !== undefined) return act({ t: 'armutAnswer', accept: d.armut === '1' });
     if (d.ann) return act({ t: 'announce', level: +d.ann });
     if (d.card && g) {
@@ -623,9 +840,11 @@ import { CARD_DEFS, CARD_BODY } from './cards.js?v=9';
       case 'fillBots': return act({ t: 'fillBots' });
       case 'start': return act({ t: 'start' });
       case 'next': return act({ t: 'next' });
-      case 'bock': return act({ t: 'bock' });
       case 'armutGive': return act({ t: 'armutGive', cards: selected.slice() });
       case 'armutReturn': return act({ t: 'armutReturn', cards: selected.slice() });
+      case 'cancelsolo': pendingSolo = null; return renderFelt();
+      case 'lasttrick': showLast = !showLast; return renderFelt();
+      case 'pdf': return downloadPdf();
       case 'editname': { const e = $('nick2'); if (e) { e.focus(); e.select(); e.scrollIntoView({ block: 'center', behavior: 'smooth' }); } return; }
       case 'askreset': confirmReset = true; return renderSide();
       case 'noreset': confirmReset = false; return renderSide();
