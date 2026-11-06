@@ -85,9 +85,9 @@ ex('D Re+Kontra, keine 90 angesagt', g, [0, 16, 0, 16]);
 // E wie D, aber in der Bockrunde -> 32
 g.bock = 1; ex('E wie D mit Bock', g, [0, 32, 0, 32]);
 g.bock = 2; ex('E2 Bock stapelt nicht', g, [0, 32, 0, 32]);
-// F Hochzeit gewonnen 130:110 -> gewonnen 1 + Hochzeit 1 = 2
+// F Hochzeit gewonnen 130:110 -> nur gewonnen 1 (kein Hochzeitspunkt)
 g = mk([0, 1], { type: 'hochzeit', hz: { bride: 0, partner: 1, alone: false, done: true, clar: 1 } }); g.tricks = tricksFor([0, 1], 130, 110);
-ex('F Hochzeit gewonnen', g, [0, 0, 2, 2]);
+ex('F Hochzeit gewonnen', g, [0, 0, 1, 1]);
 // G Trumpfabgabe verloren 115:125 -> gewonnen 1 + Trumpfabgabe verloren 1 = 2 je Re-Spieler (kein „gegen die Alten“)
 g = mk([1, 3], { type: 'armut', armut: { poor: 3, taker: 1 } }); g.tricks = tricksFor([1, 3], 115, 125, 5);
 ex('G Trumpfabgabe verloren', g, [0, 2, 0, 2]);
