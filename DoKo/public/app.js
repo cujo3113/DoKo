@@ -1,6 +1,6 @@
 // Versionsnummer an den Dateinamen, damit Browser nie alte und neue Dateien mischen
-import E from './engine.js?v=10';
-import { CARD_DEFS, CARD_BODY } from './cards.js?v=10';
+import E from './engine.js?v=11';
+import { CARD_DEFS, CARD_BODY } from './cards.js?v=11';
 
   const $ = (id) => document.getElementById(id);
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -688,7 +688,13 @@ import { CARD_DEFS, CARD_BODY } from './cards.js?v=10';
       ? `<table><thead><tr><th>Spiel</th>${names.map((n) => `<th title="${esc(n)}">${esc(n)}</th>`).join('')}</tr></thead><tbody>${rows}</tbody>
          <tfoot><tr><td class="kind">Zu zahlen</td>${run.map((v) => `<td class="eur">${E.euro(v)}</td>`).join('')}</tr></tfoot></table>`
       : '<div class="empty">Hier stehen nach jedem Spiel die Punkte der Verlierer, wie auf dem Doko-Block. Jeder Punkt kostet 5 Cent.</div>';
-    const logItems = state.log.slice(-8).reverse().map((l) => `<li>${esc(l)}</li>`).join('');
+    // Verlauf nur für das aktuelle bzw. letzte Spiel: ab dem Eintrag „Spiel N: … gibt.“
+    let from = -1;
+    for (let i = state.log.length - 1; i >= 0; i--) if (/^Spiel \d+: .+ gibt\.$/.test(state.log[i])) { from = i; break; }
+    if (from > 0 && /schmeißt/.test(state.log[from - 1])) from -= 1; // Schmeißen davor mit anzeigen
+    const logLines = from >= 0 ? state.log.slice(from) : state.log.slice(-8);
+    const logItems = logLines.slice().reverse().map((l) => `<li>${esc(l)}</li>`).join('');
+    const logTitle = g ? `Verlauf <small>Spiel ${g.no}</small>` : 'Verlauf';
     const reset = confirmReset
       ? `<span class="notice">Punkte und Spielstand löschen?</span><button class="sidebtn danger" data-act="reset">Ja, neue Partie</button><button class="sidebtn" data-act="noreset">Abbrechen</button>`
       : `<button class="sidebtn" data-act="askreset"${readOnly ? ' disabled' : ''}>Neue Partie</button>`;
@@ -697,7 +703,7 @@ import { CARD_DEFS, CARD_BODY } from './cards.js?v=10';
       <div class="box"><h3>Dieses Spiel</h3>${info}
         <div class="btnrow">${m >= 0 && state.phase === 'game' ? `<button class="sidebtn" data-leave="${m}">Platz an Bot abgeben</button>` : ''}</div></div>
       <div class="box"><h3>Spielzettel <small>${state.games.length ? state.games.length + (state.games.length === 1 ? ' Spiel' : ' Spiele') + ' · Verliererpunkte' : ''}</small></h3><div class="zettel" id="zettel">${zettel}</div>${state.games.length ? '<div class="btnrow"><button class="sidebtn" data-act="pdf">Spielzettel als PDF</button></div>' : ''}</div>
-      <div class="box"><h3>Verlauf</h3><ul class="log">${logItems || '<li>Noch nichts passiert.</li>'}</ul></div>
+      <div class="box"><h3>${logTitle}</h3><ul class="log">${logItems || '<li>Noch nichts passiert.</li>'}</ul></div>
       <div class="box"><details class="rules"><summary>Hausregeln in dieser App</summary><ul>
         <li>40 Karten ohne Neunen, 10 pro Spieler. Trumpf: Herz 10, Damen, Buben, Karo Ass, 10, König. Bei zwei gleichen Karten sticht die erste.</li>
         <li>Soli: Trumpfsolo (Karo-Solo), Damensolo, Bubensolo, Königssolo. Ein Solo hat Vorrang vor Hochzeit und Trumpfabgabe, und es spielt wie immer der Spieler links vom Geber aus.</li>
