@@ -1,6 +1,6 @@
 // Versionsnummer an den Dateinamen, damit Browser nie alte und neue Dateien mischen
-import E from './engine.js?v=18';
-import { CARD_DEFS, CARD_BODY } from './cards.js?v=18';
+import E from './engine.js?v=19';
+import { CARD_DEFS, CARD_BODY } from './cards.js?v=19';
 
   const $ = (id) => document.getElementById(id);
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -270,6 +270,62 @@ import { CARD_DEFS, CARD_BODY } from './cards.js?v=18';
   })();
 
   if (params.has('debug')) window.__doko = { Sound };
+  // ---------- Stimme: Ansagen werden vorgelesen (Sprachausgabe des Browsers) ----------
+  const Voice = (() => {
+    const synth = window.speechSynthesis;
+    let on = store.get('doko-voice') !== 'off';
+    let voice = null, unlocked = false;
+    // bekannte deutsche Frauenstimmen (Apple, Google, Microsoft) – die erste vorhandene gewinnt
+    const PREF = ['Anna', 'Petra', 'Helena', 'Marlene', 'Vicki', 'Katja', 'Hedda', 'Amala', 'Seraphina', 'Google Deutsch', 'Sandy', 'Shelley'];
+    function pick() {
+      if (!synth) return null;
+      const vs = synth.getVoices().filter((v) => /^de([-_]|$)/i.test(v.lang));
+      for (const n of PREF) { const v = vs.find((x) => x.name.includes(n)); if (v) return v; }
+      return vs.find((v) => /female|weib|frau/i.test(v.name)) || vs[0] || null;
+    }
+    if (synth) { voice = pick(); synth.onvoiceschanged = () => { voice = pick(); }; }
+    function say(text) {
+      if (!on || !synth || !text) return;
+      try {
+        voice = voice || pick();
+        const u = new SpeechSynthesisUtterance(text);
+        u.lang = 'de-DE'; if (voice) u.voice = voice;
+        u.rate = 0.8; u.pitch = 0.78; u.volume = 1; // tiefer und langsamer: möglichst verrucht
+        synth.speak(u);
+      } catch (e) { /* keine Sprachausgabe */ }
+    }
+    // iPhone/iPad: die erste Ausgabe muss durch einen Tipp ausgelöst werden
+    ['pointerdown', 'keydown'].forEach((ev) => document.addEventListener(ev, () => {
+      if (unlocked || !synth || !on) return;
+      unlocked = true; try { const u = new SpeechSynthesisUtterance(' '); u.volume = 0; synth.speak(u); } catch (e) {}
+    }, { capture: true }));
+    function setOn(v) { on = v; store.set('doko-voice', v ? 'on' : 'off'); if (!v && synth) synth.cancel(); }
+    return { say, setOn, isOn: () => on, available: !!synth };
+  })();
+  const SAY = {
+    ann: { 1: { re: 'Re!', contra: 'Kontra!' }, 2: 'Keine neunzig.', 3: 'Keine sechzig.', 4: 'Keine dreißig.', 5: 'Schwarz!' },
+    vorbehalt: 'Vorbehalt.',
+    hochzeit: 'Hochzeit … wer will mich?',
+    hzPartner: 'Ja, ich will.',
+    hzAlone: 'Dann eben allein.',
+    armut: 'Trumpfabgabe … wer erbarmt sich?',
+    armutTaken: 'Angenommen.',
+    armutNone: 'Keiner will … neu geben.',
+    solo: { solo_trumpf: 'Trumpfsolo.', solo_damen: 'Damensolo.', solo_buben: 'Bubensolo.', solo_koenige: 'Königssolo.' },
+    stille: 'Oh … eine stille Hochzeit.',
+    schmeissen: 'Geschmissen. Neu geben, bitte.',
+    bock: 'Bock!',
+  };
+  function renderVoiceBtn() {
+    const b = $('voicebtn'); if (!b) return;
+    if (!Voice.available) { b.hidden = true; return; }
+    const on = Voice.isOn();
+    b.setAttribute('aria-pressed', String(on));
+    b.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/>${on ? '' : '<path d="M4 4l16 16"/>'}</svg>Stimme ${on ? 'an' : 'aus'}`;
+  }
+  $('voicebtn').addEventListener('click', () => { Voice.setOn(!Voice.isOn()); renderVoiceBtn(); if (Voice.isOn()) Voice.say('Hallo, ihr Lieben.'); });
+  renderVoiceBtn();
+
   function renderSoundBtn() {
     const b = $('soundbtn'); if (!b) return;
     const on = Sound.isOn();
@@ -335,9 +391,38 @@ import { CARD_DEFS, CARD_BODY } from './cards.js?v=18';
     const a = g.armut;
     return `Trumpfabgabe: ${seatName(a.taker)} gibt ${seatName(a.poor)} drei Karten zurück, davon ${trumpsText(a.returnedTrumps || 0)}.`;
   }
+  // Was wird gesagt? (vergleicht den vorigen mit dem neuen Stand)
+  function speakFor(p, snap, g) {
+    if (!p || !snap) return;
+    if (snap.deal !== p.deal) {
+      if (/schmeißt/.test(snap.log) || /schmeißt/.test(state.log.slice(-3).join(' '))) Voice.say(SAY.schmeissen);
+      else if (p.phase === 'armut_answer') Voice.say(SAY.armutNone);
+      return;
+    }
+    if (snap.vb > p.vb && snap.phase === 'vorbehalt') Voice.say(SAY.vorbehalt);
+    if (p.phase === 'vorbehalt' && snap.phase !== 'vorbehalt') {
+      if (snap.type === 'hochzeit') Voice.say(SAY.hochzeit);
+      else if (snap.type === 'armut') Voice.say(SAY.armut);
+      else if (SAY.solo[snap.type]) Voice.say(SAY.solo[snap.type]);
+    }
+    if (snap.taker !== null && p.taker === null) Voice.say(SAY.armutTaken);
+    if (snap.hzDone && !p.hzDone) Voice.say(snap.hzPartner !== null ? SAY.hzPartner : SAY.hzAlone);
+    if (snap.stille && !p.stille && snap.phase !== 'done') Voice.say(SAY.stille);
+    if (snap.ann > p.ann) {
+      const a = g.ann.hist[g.ann.hist.length - 1];
+      Voice.say(a.level === 1 ? SAY.ann[1][a.party] : SAY.ann[a.level]);
+    }
+    if (snap.phase === 'done' && p.phase !== 'done' && g.result && g.result.bockEvents && g.result.bockEvents.length) {
+      setTimeout(() => Voice.say(SAY.bock), LAST_TRICK_SHOW_MS + 600);
+    }
+  }
+
   function soundsFor(st) {
     const g = st && st.game;
-    const snap = g ? { deal: g.dealId, cur: g.current.length, tricks: g.tricks.length, ann: g.ann.hist.length, phase: g.phase, turn: g.turn } : null;
+    const snap = g ? { deal: g.dealId, cur: g.current.length, tricks: g.tricks.length, ann: g.ann.hist.length, phase: g.phase, turn: g.turn,
+      vb: g.decl.filter((d) => d && d !== 'gesund').length, type: g.type, hzDone: !!(g.hz && g.hz.done), hzPartner: g.hz ? g.hz.partner : null,
+      taker: g.armut ? g.armut.taker : null, stille: !!g.stille, log: st.log[st.log.length - 1] || '' } : null;
+    speakFor(prevSnap, snap, g);
     if (p0Armut(prevSnap, snap, g)) toast(armutReturnText(g), 7000);
     const p = prevSnap; prevSnap = snap;
     if (!p || !snap) return;
