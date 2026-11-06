@@ -297,7 +297,7 @@ import { CARD_DEFS, CARD_BODY } from './cards.js';
     const won = g.tricks.map((t, i) => ({ i: i + 1, p: t.points, w: t.winner })).filter((t) => t.w === s);
     const eyes = won.reduce((a, t) => a + t.p, 0);
     const total = E.totals(state)[s];
-    const fmt = (v) => (v > 0 ? '+' + v : String(v));
+    const fmt = (v) => `${v} Pkt · ${E.euro(v)}`;
     const list = won.length ? `<span class="tricks">${won.map((t) => `<span>Stich ${t.i}: ${t.p}</span>`).join('')}</span>` : '<span>Noch kein Stich.</span>';
     return `<span class="stat" tabindex="0" aria-label="${esc(seatName(s))}: ${eyes} Augen in ${won.length} Stichen, Spielstand ${fmt(total)}"><b>${eyes}</b> Augen · ${won.length} ${won.length === 1 ? 'Stich' : 'Stiche'}`
       + `<span class="tip" role="tooltip"><strong>${esc(seatName(s))}</strong>`
@@ -407,13 +407,25 @@ import { CARD_DEFS, CARD_BODY } from './cards.js';
     const reNames = g.re.map(seatName).join(' & ');
     const coNames = [0, 1, 2, 3].filter((s) => !g.re.includes(s)).map(seatName).join(' & ');
     const head = r.winner === 're' ? 'Re gewinnt' : r.winner === 'contra' ? 'Kontra gewinnt' : 'Keiner gewinnt';
-    const lines = r.lines.map((l) => `<li><span>${esc(l.text)}${l.extra ? '' : ''}</span><span class="p">${l.party === 're' ? 'Re' : 'Kontra'} +${l.pts}</span></li>`).join('') || '<li><span>Keine Punkte</span><span class="p">0</span></li>';
-    const scores = [0, 1, 2, 3].map((s) => `<div><span>${esc(seatName(s))}</span><b>${r.points[s] > 0 ? '+' : ''}${r.points[s]}</b></div>`).join('');
+    const lines = r.lines.map((l) => `<li><span>${esc(l.text)}</span><span class="p">${l.party === 're' ? 'Re' : 'Kontra'} ${l.pts}</span></li>`).join('') || '<li><span>Keine Punkte</span><span class="p">0</span></li>';
+    const sumRe = r.lines.filter((l) => l.party === 're').reduce((a, l) => a + l.pts, 0);
+    const sumCo = r.lines.filter((l) => l.party === 'contra').reduce((a, l) => a + l.pts, 0);
+    const fac = [];
+    if (r.annMult > 1) fac.push(`× ${r.annMult} (${r.annMult === 4 ? 'Re und Kontra' : r.ann.re ? 'Re' : 'Kontra'} angesagt)`);
+    if (r.m > 1) fac.push(`× ${r.m} (Bock)`);
+    const payerNames = r.payers.map(seatName).join(' & ');
+    const saldo = `${r.S}${r.lines.some((l) => l.extra) ? ` (${r.winner === 're' ? 'Re' : 'Kontra'} ${r.winner === 're' ? sumRe : sumCo} − ${r.winner === 're' ? 'Kontra' : 'Re'} ${r.winner === 're' ? sumCo : sumRe})` : ''}`;
+    let calc;
+    if (!r.winner) calc = 'Keine Partei hat ihr Ziel erreicht: <strong>Nullspiel</strong>, keine Punkte.';
+    else if (r.nullspiel) calc = `Die Verlierer haben mindestens so viele Sonderpunkte wie die Gewinner Punkte (${saldo}): <strong>Nullspiel</strong>, keine Punkte.`;
+    else if (r.soloLost) calc = `Saldo ${saldo} ${fac.join(' ')} = ${r.value}, verlorenes Solo dreifach: <strong>${3 * r.value} Punkte</strong> für ${esc(payerNames)} (${E.euro(3 * r.value)})`;
+    else calc = `Saldo ${saldo} ${fac.join(' ')} = <strong>${r.value} Punkte</strong> für ${r.payers.length > 1 ? 'jeden Verlierer' : 'den Verlierer'} (${esc(payerNames)}, je ${E.euro(r.value)})`;
+    const scores = [0, 1, 2, 3].map((s) => `<div><span>${esc(seatName(s))}</span><b>${r.points[s] ? r.points[s] : '–'}</b></div>`).join('');
     return `<div class="panel">
-      <div class="result-head"><h2>${head}</h2><span class="muted">${esc(r.label)}${r.m > 1 ? ` · Bock ×${r.m}` : ''}${r.solo ? ' · Solo zählt dreifach' : ''}</span></div>
+      <div class="result-head"><h2>${head}</h2><span class="muted">${esc(r.label)}${r.m > 1 ? ` · Bock ×${r.m}` : ''}</span></div>
       <p><strong>Re</strong> (${esc(reNames)}): ${r.eyes.re} Augen · <strong>Kontra</strong> (${esc(coNames)}): ${r.eyes.contra} Augen</p>
       <ul class="lines">${lines}</ul>
-      <p class="muted">Spielwert ${Math.abs(r.S)}${r.m > 1 ? ` × ${r.m}` : ''}</p>
+      <p>${calc}</p>
       <div class="scores">${scores}</div>
       <div class="btnrow"><button class="btn primary" data-act="next"${readOnly ? ' disabled' : ''}>Nächstes Spiel</button><button class="btn" data-act="bock"${readOnly ? ' disabled' : ''}>Bockrunde ansagen</button></div>
     </div>`;
@@ -515,11 +527,12 @@ import { CARD_DEFS, CARD_BODY } from './cards.js';
     const run = [0, 0, 0, 0];
     const rows = state.games.map((x) => {
       x.points.forEach((p, i) => (run[i] += p));
-      return `<tr class="${x.bock ? 'bock' : ''}"><td class="kind">${x.no} ${esc(x.label)}</td>${run.map((v, i) => `<td>${v}<span class="d">${x.points[i] > 0 ? '+' : ''}${x.points[i]}</span></td>`).join('')}</tr>`;
+      return `<tr class="${x.bock ? 'bock' : ''}"><td class="kind">${x.no} ${esc(x.label)}</td>${run.map((v, i) => `<td>${v}<span class="d">${x.points[i] ? '+' + x.points[i] : '·'}</span></td>`).join('')}</tr>`;
     }).join('');
     const zettel = state.games.length
-      ? `<table><thead><tr><th>Spiel</th>${names.map((n) => `<th title="${esc(n)}">${esc(n)}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table>`
-      : '<div class="empty">Hier stehen nach jedem Spiel die Punkte, wie auf dem Doko-Block.</div>';
+      ? `<table><thead><tr><th>Spiel</th>${names.map((n) => `<th title="${esc(n)}">${esc(n)}</th>`).join('')}</tr></thead><tbody>${rows}</tbody>
+         <tfoot><tr><td class="kind">Zu zahlen</td>${run.map((v) => `<td class="eur">${E.euro(v)}</td>`).join('')}</tr></tfoot></table>`
+      : '<div class="empty">Hier stehen nach jedem Spiel die Punkte der Verlierer, wie auf dem Doko-Block. Jeder Punkt kostet 5 Cent.</div>';
     const logItems = state.log.slice(-8).reverse().map((l) => `<li>${esc(l)}</li>`).join('');
     const reset = confirmReset
       ? `<span class="notice">Punkte und Spielstand löschen?</span><button class="sidebtn danger" data-act="reset">Ja, neue Partie</button><button class="sidebtn" data-act="noreset">Abbrechen</button>`
@@ -528,20 +541,22 @@ import { CARD_DEFS, CARD_BODY } from './cards.js';
     side.innerHTML = `
       <div class="box"><h3>Dieses Spiel</h3>${info}
         <div class="btnrow"><button class="sidebtn" data-act="bock"${readOnly || !state.seats.some((s) => s) ? ' disabled' : ''}>Bockrunde ansagen</button>${m >= 0 && state.phase === 'game' ? `<button class="sidebtn" data-leave="${m}">Platz an Bot abgeben</button>` : ''}</div></div>
-      <div class="box"><h3>Spielzettel <small>${state.games.length ? state.games.length + (state.games.length === 1 ? ' Spiel' : ' Spiele') : ''}</small></h3><div class="zettel" id="zettel">${zettel}</div></div>
+      <div class="box"><h3>Spielzettel <small>${state.games.length ? state.games.length + (state.games.length === 1 ? ' Spiel' : ' Spiele') + ' · Verliererpunkte' : ''}</small></h3><div class="zettel" id="zettel">${zettel}</div></div>
       <div class="box"><h3>Verlauf</h3><ul class="log">${logItems || '<li>Noch nichts passiert.</li>'}</ul></div>
       <div class="box"><details class="rules"><summary>Hausregeln in dieser App</summary><ul>
         <li>40 Karten ohne Neunen, 10 pro Spieler. Trumpf: Herz 10, Damen, Buben, Karo Ass, 10, König. Bei zwei gleichen Karten sticht die erste.</li>
-        <li>Soli: Trumpfsolo (Karo-Solo), Damensolo, Bubensolo, Königssolo. Ein Solo hat Vorrang vor Hochzeit und Trumpfabgabe, zählt dreifach, und es spielt wie immer der Spieler links vom Geber aus.</li>
+        <li>Soli: Trumpfsolo (Karo-Solo), Damensolo, Bubensolo, Königssolo. Ein Solo hat Vorrang vor Hochzeit und Trumpfabgabe, und es spielt wie immer der Spieler links vom Geber aus.</li>
         <li>Vorsortieren: Während der Vorbehaltsabfrage kannst du deine Karten nach Normalspiel oder einem Solo sortieren lassen. Das ist keine Ansage, das Spiel sagst du danach wie gewohnt an.</li>
         <li>Schmeißen: Ist dein höchster Trumpf der Karo-Bube (oder hast du gar keinen höheren) oder hast du mindestens 5 Könige, kannst du während der Vorbehaltsabfrage jederzeit schmeißen. Derselbe Geber gibt neu, das Spiel zählt nicht.</li>
         <li>Hochzeit: Der erste fremde Fehlstich (Fehlfarbe ausgespielt, ein anderer gewinnt) in den ersten drei Stichen macht dessen Gewinner zum Partner. Trumpfstiche zählen nicht. Klappt das nicht, spielt die Hochzeit ein Solo.</li>
         <li>Stille Hochzeit: Beide Kreuz-Damen und „gesund“ gesagt. Wird wie ein Solo abgerechnet.</li>
         <li>Trumpfabgabe: Bei höchstens 3 Trümpfen gibst du alle Trümpfe (auf 3 Karten aufgefüllt) ab. Wer annimmt, gibt 3 Karten zurück und spielt mit dir Re. Nimmt keiner, wird neu gegeben.</li>
         <li>Ansagen: Re/Kontra bis zur 2. eigenen Karte (Erwiderung eine Karte länger), keine 90 bis zur 3., keine 60 bis zur 4., keine 30 bis zur 5., schwarz bis zur 6. Bei der Hochzeit beginnen die Fristen direkt nach dem Klärungsstich neu.</li>
-        <li>Sonderpunkte (nur ohne Solo): Volle (Stich mit mindestens 40 Augen), Herz durchgegangen (alle vier bedienen Herz), Karlchen macht den letzten Stich, Karlchen im letzten Stich gefangen, Fuchs (Karo-Ass) macht den letzten Stich. Fallen beide Kreuz-Damen in denselben Stich, bekommt Kontra einen Punkt.</li>
-        <li>Abrechnung: Gewonnen 1, gegen die Alten 1, unter 90/60/30/schwarz je 1, Re und Kontra je 2, jede Absage 1. Erreicht keine Partei ihr Ziel, zählen nur die Sonderpunkte.</li>
-        <li>Bockrunde: Die nächsten 4 Spiele zählen doppelt, mehrere Bockrunden stapeln sich. Vor der ersten Karte angesagt, zählt schon das laufende Spiel.</li>
+        <li>Zählung: Punkte bekommen immer die Verlierer, jeder Punkt kostet 5 Cent.</li>
+        <li>Normalspiel: Gewonnen 1, gegen die Alten 1, keine 90/60/30/schwarz je 1, jede erfüllte Absage („keine 90 angesagt“ usw.) 1, Hochzeit bzw. Trumpfabgabe gewonnen oder verloren 1. Re angesagt verdoppelt die Summe, Kontra angesagt verdoppelt sie, beides vervierfacht.</li>
+        <li>Sonderpunkte (nur ohne Solo, je 1 für die Partei): Doppelkopf (Stich mit mindestens 40 Augen), Herz-Stich durchgegangen, Karlchen gewinnt den letzten Stich, Karlchen gefangen, Fuchs gefangen, Fuchs gewinnt den letzten Stich, beide Kreuz-Damen in einem Stich (für Kontra). Sonderpunkte der Verlierer werden abgezogen. Haben die Verlierer mindestens so viele Sonderpunkte wie die Gewinner Punkte, ist es ein Nullspiel.</li>
+        <li>Solo (auch stille Hochzeit und Hochzeit ohne Partner): gewonnen 8, keine 90 12, keine 60 20, keine 30 28, schwarz 36, mit erfüllter Absage jeweils 4 mehr (16, 24, 32, 40). Re angesagt ×2, Kontra angesagt ×2, beides ×4. Gewinnt der Solist, bekommt jeder Gegenspieler den Wert; verliert er, bekommt er den dreifachen Wert.</li>
+        <li>Bockrunde: Die nächsten 4 Spiele zählen doppelt (inklusive Re/Kontra), mehrere Bockrunden stapeln sich. Ein Solo zählt in der Bockrunde doppelt, verbraucht aber kein Bockspiel. Vor der ersten Karte angesagt, zählt schon das laufende Spiel.</li>
       </ul></details></div>
       <div class="box"><h3>Tisch</h3>
         <form class="btnrow" id="nameform"><label class="namelabel" for="nick2">Dein Name</label><input id="nick2" class="nameinput" maxlength="20" autocomplete="nickname" placeholder="Name eintragen" value="${esc(m >= 0 ? seatName(m) : nick())}"><button class="sidebtn" type="submit">${m >= 0 ? 'Name ändern' : 'Merken'}</button></form>

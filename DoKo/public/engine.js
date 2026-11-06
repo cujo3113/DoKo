@@ -4,7 +4,8 @@
  */
 const DokoEngine = (() => {
   const RULES = {
-    fuchs: false,            // Fuchs gefangen (nicht in euren Regeln, abschaltbar)
+    fuchs: true,             // Fuchs gefangen gibt einen Sonderpunkt
+    centPerPoint: 5,         // Jeder Punkt kostet die Verlierer 5 Cent
     hochzeitTricks: 3,       // Klärungsstiche bei der Hochzeit
     armutMaxTrumps: 3,       // Trumpfabgabe bei höchstens so vielen Trümpfen
     bockGames: 4,            // Länge einer Bockrunde
@@ -280,20 +281,27 @@ const DokoEngine = (() => {
     const reMet = met('re'), coMet = met('contra');
     const winner = reMet && !coMet ? 're' : coMet && !reMet ? 'contra' : null;
 
+    // ---- Zählung nach Hausregel-Tabelle: Punkte bekommen immer die Verlierer ----
+    const loser = winner === 're' ? 'contra' : winner === 'contra' ? 're' : null;
+    const PL = (p) => (p === 're' ? 'Re' : 'Kontra');
+    const levels = loser ? [eyes[loser] < 90, eyes[loser] < 60, eyes[loser] < 30, tricks[loser] === 0].filter(Boolean).length : 0;
+    const LV = ['keine 90', 'keine 60', 'keine 30', 'schwarz'];
     const lines = [];
-    let V = 0;
-    if (winner) {
-      const loser = winner === 're' ? 'contra' : 're';
-      const add = (text, n = 1) => { lines.push({ text, pts: n, party: winner }); V += n; };
+    let V = 0; // Punkte der Gewinnerseite (ohne Sonderpunkte)
+    const add = (text, n = 1) => { lines.push({ text, pts: n, party: winner }); V += n; };
+    if (winner && solo) {
+      // Solo-Leiter: gewonnen 8, keine 90 12, keine 60 20, keine 30 28, schwarz 36; jeweils +4 wenn angesagt
+      const ladder = levels === 0 ? 8 : 4 + 8 * levels;
+      const sv = winner === 're' ? 'Solo gewonnen' : 'Solo verloren';
+      add(levels === 0 ? sv : `${sv}, ${LV[levels - 1]}`, ladder);
+      if (L[winner] >= 2) add(`${ANN_LABEL[winner][L[winner]]} angesagt (${PL(winner)})`, 4);
+    } else if (winner) {
       add('Gewonnen');
-      if (winner === 'contra' && !solo) add('Gegen die Alten');
-      if (eyes[loser] < 90) add('Unter 90 gespielt');
-      if (eyes[loser] < 60) add('Unter 60 gespielt');
-      if (eyes[loser] < 30) add('Unter 30 gespielt');
-      if (tricks[loser] === 0) add('Schwarz gespielt');
-      if (L.re >= 1) add('Re angesagt', 2);
-      if (L.contra >= 1) add('Kontra angesagt', 2);
-      for (const p of ['re', 'contra']) for (let l = 2; l <= L[p]; l++) add(`${ANN_LABEL[p][l]} abgesagt (${p === 're' ? 'Re' : 'Kontra'})`);
+      if (winner === 'contra') add('Gegen die Alten');
+      for (let i = 0; i < levels; i++) add(LV[i]);
+      for (const p of ['re', 'contra']) for (let l = 2; l <= L[p]; l++) add(`${ANN_LABEL[p][l]} angesagt (${PL(p)})`);
+      if (g.type === 'hochzeit') add(winner === 're' ? 'Hochzeit gewonnen' : 'Hochzeit verloren');
+      if (g.type === 'armut') add(winner === 're' ? 'Trumpfabgabe gewonnen' : 'Trumpfabgabe verloren');
     }
 
     const extras = { re: 0, contra: 0 };
@@ -301,30 +309,33 @@ const DokoEngine = (() => {
       const ex = (party, text) => { extras[party]++; lines.push({ text, pts: 1, party, extra: true }); };
       g.tricks.forEach((t, i) => {
         const wp = partyOfSeat(t.winner);
-        if (t.points >= 40) ex(wp, `Volle (${t.points} Augen, Stich ${i + 1})`);
-        if (kind === 'normal' && t.cards.every((p) => suitOf(p.card) === 'H' && !isTrump(p.card, kind))) ex(wp, `Herz durchgegangen (Stich ${i + 1})`);
-        if (RULES.fuchs) for (const p of t.cards) if (key(p.card) === 'DA' && partyOfSeat(p.seat) !== wp) ex(wp, 'Fuchs gefangen');
+        if (t.points >= 40) ex(wp, `Doppelkopf (${t.points} Augen, Stich ${i + 1})`);
+        if (kind === 'normal' && t.cards.every((p) => suitOf(p.card) === 'H' && !isTrump(p.card, kind))) ex(wp, `Herz-Stich durchgegangen (Stich ${i + 1})`);
+        if (RULES.fuchs) for (const p of t.cards) if (key(p.card) === 'DA' && partyOfSeat(p.seat) !== wp) ex(wp, `Fuchs gefangen (Stich ${i + 1})`);
         if (t.cards.filter((p) => key(p.card) === 'CQ').length === 2) ex('contra', `Beide Kreuz-Damen in einem Stich (Stich ${i + 1})`);
         if (i === 9 && kind === 'normal') {
           const wi = t.cards.findIndex((p) => p.seat === t.winner);
-          if (key(t.cards[wi].card) === 'CJ') ex(wp, 'Karlchen macht den letzten Stich');
-          if (key(t.cards[wi].card) === 'DA') ex(wp, 'Fuchs macht den letzten Stich');
+          if (key(t.cards[wi].card) === 'CJ') ex(wp, 'Karlchen gewinnt den letzten Stich');
+          if (key(t.cards[wi].card) === 'DA') ex(wp, 'Fuchs gewinnt den letzten Stich');
           t.cards.forEach((p, j) => { if (j !== wi && key(p.card) === 'CJ' && partyOfSeat(p.seat) !== wp) ex(wp, 'Karlchen gefangen'); });
         }
       });
     }
 
-    const S = (winner === 're' ? V : winner === 'contra' ? -V : 0) + extras.re - extras.contra; // aus Re-Sicht
+    // Saldo der Gewinner: eigene Punkte + eigene Sonderpunkte − Sonderpunkte der Verlierer.
+    // Ist der Saldo 0 oder kleiner (Verlierer haben mehr Sonderpunkte), ist es ein Nullspiel.
+    const S = winner ? V + extras[winner] - extras[loser] : 0;
+    const nullspiel = !winner || S <= 0;
+    const annMult = (L.re >= 1 ? 2 : 1) * (L.contra >= 1 ? 2 : 1); // Re ×2, Kontra ×2, beides ×4 (auch im Solo)
     const m = Math.pow(2, g.bock || 0);
-    const points = [0, 1, 2, 3].map((s) => {
-      const re = g.re.includes(s);
-      if (solo) return (re ? 3 * S : -S) * m;
-      return (re ? S : -S) * m;
-    });
+    const value = nullspiel ? 0 : S * annMult * m; // Punkte je Verlierer
+    const soloLost = solo && winner === 'contra' && !nullspiel; // verlorenes Solo zählt dreifach
+    const payers = nullspiel ? [] : [0, 1, 2, 3].filter((x) => partyOfSeat(x) === loser);
+    const points = [0, 1, 2, 3].map((x) => (payers.includes(x) ? (soloLost ? 3 * value : value) : 0));
     let label = TYPE_LABEL[g.type];
     if (g.stille) label = 'Stille Hochzeit';
     if (g.type === 'hochzeit' && g.hz.alone) label = 'Hochzeit (Solo)';
-    return { solo, eyes, tricks, winner, lines, V, extras, S, m, points, label, ann: { ...L } };
+    return { solo, eyes, tricks, winner, lines, V, extras, S, nullspiel, soloLost, annMult, m, value, payers, points, label, ann: { ...L } };
   }
 
   function finishGame(state) {
@@ -333,7 +344,8 @@ const DokoEngine = (() => {
     g.result = r; g.phase = 'done';
     state.games.push({ no: g.no, label: r.label, re: g.re.slice(), soloist: g.soloist, eyes: r.eyes, winner: r.winner, points: r.points, bock: g.bock });
     const who = r.winner === 're' ? 'Re' : r.winner === 'contra' ? 'Kontra' : 'Niemand';
-    log(state, `${who} gewinnt mit ${r.winner ? r.eyes[r.winner] : r.eyes.re} Augen. Spielwert ${Math.abs(r.S)}${r.m > 1 ? ` ×${r.m} (Bock)` : ''}.`);
+    const names = r.payers.map((s) => seatName(state, s)).join(' & ');
+    log(state, `${who} gewinnt mit ${r.winner ? r.eyes[r.winner] : r.eyes.re} Augen. ${r.payers.length ? `${names} ${r.payers.length > 1 ? 'bekommen je' : 'bekommt'} ${r.points[r.payers[0]]} Punkte.` : 'Nullspiel, keine Punkte.'}`);
   }
 
   function removeCards(hand, cards) {
@@ -480,7 +492,8 @@ const DokoEngine = (() => {
       }
       case 'next': {
         if (!g || g.phase !== 'done') return err('Das Spiel ist noch nicht vorbei.');
-        state.bock.shift();
+        // Ein Solo zählt nicht zu den Bockspielen: das Bockspiel bleibt für das nächste Spiel stehen
+        if (!(g.result && g.result.solo && g.bock > 0)) state.bock.shift();
         state.dealer = (state.dealer + 1) % 4;
         deal(state, a.hands);
         break;
@@ -655,11 +668,12 @@ const DokoEngine = (() => {
     for (const g of state.games) g.points.forEach((p, i) => (t[i] += p));
     return t;
   }
+  const euro = (pts) => (pts * RULES.centPerPoint / 100).toLocaleString('de-DE', { style: 'currency', currency: 'EUR' });
 
   return {
     RULES, SOLOS, schmeissReason, viewFor, dispatch, botStep, botDelay, SUIT_SYM, SUIT_NAME, RANK_SHORT, TYPE_LABEL, DECL_LABEL, ANN_LABEL,
     newTable, apply, botAction, legalCards, sortHand, kindOf, isTrump, partyOf, knownParty,
-    announceOptions, declOptions, scoreGame, totals, cardName, pts, key, suitOf, rankOf, trickWinnerIdx, countTrumps,
+    announceOptions, declOptions, scoreGame, totals, euro, cardName, pts, key, suitOf, rankOf, trickWinnerIdx, countTrumps,
   };
 })();
 export default DokoEngine;
