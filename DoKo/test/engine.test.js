@@ -84,30 +84,37 @@ g.tricks[8] = { cards: [{ seat: 0, card: 'DA0' }, { seat: 1, card: 'DT0' }, { se
 ex('D Re+Kontra, keine 90 angesagt', g, [0, 16, 0, 16]);
 // E wie D, aber in der Bockrunde -> 32
 g.bock = 1; ex('E wie D mit Bock', g, [0, 32, 0, 32]);
+g.bock = 2; ex('E2 Bock stapelt nicht', g, [0, 32, 0, 32]);
 // F Hochzeit gewonnen 130:110 -> gewonnen 1 + Hochzeit 1 = 2
 g = mk([0, 1], { type: 'hochzeit', hz: { bride: 0, partner: 1, alone: false, done: true, clar: 1 } }); g.tricks = tricksFor([0, 1], 130, 110);
 ex('F Hochzeit gewonnen', g, [0, 0, 2, 2]);
 // G Trumpfabgabe verloren 115:125 -> gewonnen 1 + gegen die Alten 1 + Trumpfabgabe verloren 1 = 3 je Re-Spieler
 g = mk([1, 3], { type: 'armut', armut: { poor: 3, taker: 1 } }); g.tricks = tricksFor([1, 3], 115, 125, 5);
 ex('G Trumpfabgabe verloren', g, [0, 3, 0, 3]);
-// H Solo gewonnen 200:40 (keine 60) -> 20 je Gegenspieler
+// H Solo gewonnen 200:40 -> 8 + keine 90 4 + keine 60 4 = 16 je Gegenspieler
 g = mk([0], { type: 'solo_damen', soloist: 0 }); g.tricks = tricksFor([0], 200, 40, 7);
-ex('H Damensolo gewonnen, keine 60', g, [0, 20, 20, 20]);
-// I Solo gewonnen 171:69 mit Re und keine 90 angesagt -> (12 + 4) x2 = 32 je Gegenspieler
+ex('H Damensolo gewonnen, keine 60', g, [0, 16, 16, 16]);
+// H2 Solo gewonnen 171:69 -> 8 + keine 90 4 = 12
+g = mk([0], { type: 'solo_damen', soloist: 0 }); g.tricks = tricksFor([0], 171, 69);
+ex('H2 Damensolo gewonnen, keine 90', g, [0, 12, 12, 12]);
+// I Solo gewonnen 171:69, Re und keine 90 angesagt -> 8 + 4 + 4 = 16; Re allein verdoppelt im Solo nicht
 g = mk([0], { type: 'solo_trumpf', soloist: 0, ann: { re: 2, contra: 0, hist: [] } }); g.tricks = tricksFor([0], 171, 69);
-ex('I Trumpfsolo, Re + keine 90', g, [0, 32, 32, 32]);
-// J Solo verloren 100:140, Kontra angesagt -> 8 x2 = 16, dreifach = 48 für den Solisten
+ex('I Trumpfsolo, Re + keine 90 angesagt', g, [0, 16, 16, 16]);
+// J Solo verloren 100:140, Kontra angesagt -> (8 + gegen die Alten 4) x2 = 24, dreifach = 72 für den Solisten
 g = mk([2], { type: 'solo_buben', soloist: 2, ann: { re: 0, contra: 1, hist: [] } }); g.tricks = tricksFor([2], 100, 140, 4);
-ex('J Bubensolo verloren, Kontra angesagt', g, [0, 0, 48, 0]);
-// K Stille Hochzeit verloren 110:130 -> 8, dreifach = 24 für den Solisten
+ex('J Bubensolo verloren, Kontra angesagt', g, [0, 0, 72, 0]);
+// K Stille Hochzeit verloren 110:130 -> (8 + 4) x3 = 36 für den Solisten
 g = mk([3], { stille: true, soloist: 3 }); g.tricks = tricksFor([3], 110, 130, 4);
-ex('K Stille Hochzeit verloren', g, [0, 0, 0, 24]);
+ex('K Stille Hochzeit verloren', g, [0, 0, 0, 36]);
 // M Solo gewonnen 130:110 mit Re UND Kontra -> 8 x4 = 32 je Gegenspieler
 g = mk([1], { type: 'solo_koenige', soloist: 1, ann: { re: 1, contra: 1, hist: [] } }); g.tricks = tricksFor([1], 130, 110, 5);
 ex('M Königssolo, Re und Kontra', g, [32, 0, 32, 32]);
-// N Solo verloren mit Re und Kontra, Solist hat nur 80 -> keine 90 = 12 x4 = 48, dreifach = 144
+// N Solo verloren mit Re und Kontra, Solist hat nur 80 -> (8 + 4 + keine 90 4) x4 = 64, dreifach = 192
 g = mk([0], { type: 'solo_damen', soloist: 0, ann: { re: 1, contra: 1, hist: [] } }); g.tricks = tricksFor([0], 80, 160, 3);
-ex('N Damensolo verloren, Re und Kontra, Solist unter 90', g, [144, 0, 0, 0]);
+ex('N Damensolo verloren, Re und Kontra, Solist unter 90', g, [192, 0, 0, 0]);
+// O Hochzeit verloren 115:125 -> gewonnen 1 + gegen die Alten 1 = 2 (kein Hochzeitspunkt mehr)
+g = mk([0, 1], { type: 'hochzeit', hz: { bride: 0, partner: 1, alone: false, done: true, clar: 1 } }); g.tricks = tricksFor([0, 1], 115, 125, 5);
+ex('O Hochzeit verloren', g, [2, 2, 0, 0]);
 // L Re gewinnt knapp (1 Punkt), Kontra hat 2 Sonderpunkte -> Nullspiel
 g = mk([0, 2]); g.tricks = tricksFor([0, 2], 125, 115);
 g.tricks[9] = { cards: [{ seat: 0, card: 'DK0' }, { seat: 1, card: 'DA0' }, { seat: 2, card: 'DK1' }, { seat: 3, card: 'SK1' }], winner: 1, points: g.tricks[9].points };
@@ -223,7 +230,9 @@ assert.ok(E.apply(s, 0, { t: 'decl', choice: 'schmeissen' }).error);
 const dealer = s.game.dealer;
 s = run(s, { seat: 3, a: { t: 'decl', choice: 'schmeissen' } });
 assert.strictEqual(s.game.phase, 'vorbehalt'); assert.strictEqual(s.game.dealer, dealer); assert.strictEqual(s.games.length, 0);
-assert.strictEqual(E.schmeissReason(['DJ0', 'DA0', 'CA0', 'CA1', 'ST0', 'ST1', 'SA0', 'HA0', 'HA1', 'CT0']), 'höchster Trumpf ist der Karo-Bube');
+assert.strictEqual(E.schmeissReason(['DJ0', 'DA0', 'CA0', 'CA1', 'ST0', 'ST1', 'SA0', 'HA0', 'HA1', 'CT0']), null, 'Karo-Bube als höchster Trumpf reicht nicht mehr');
+assert.strictEqual(E.schmeissReason(['DT0', 'DA0', 'CA0', 'CA1', 'ST0', 'ST1', 'SA0', 'HA0', 'HA1', 'CT0']), 'höchster Trumpf ist kleiner als der Karo-Bube');
+assert.strictEqual(E.schmeissReason(['SA1', 'CK0', 'CA0', 'CA1', 'ST0', 'ST1', 'SA0', 'HA0', 'HA1', 'CT0']), 'kein Trumpf');
 assert.strictEqual(E.schmeissReason(['HJ0', 'DA0', 'CA0', 'CA1', 'ST0', 'ST1', 'SA0', 'HA0', 'HA1', 'CT0']), null);
 assert.strictEqual(E.schmeissReason(['CQ0', 'CK0', 'CK1', 'SK0', 'SK1', 'HK0', 'ST1', 'SA0', 'HA1', 'CT0']), '5 Könige');
 
@@ -248,17 +257,43 @@ assert.deepStrictEqual(E.announceOptions(s.game, 1), [1, 2, 3, 4, 5]);
 for (let i = 0; i < 8; i++) { const t = s.game.turn; s = run(s, { seat: t, a: E.botAction(s, t) }); }
 assert.deepStrictEqual(E.announceOptions(s.game, 1), [2, 3, 4, 5]); for (let i = 0; i < 4; i++) { const t = s.game.turn; s = run(s, { seat: t, a: E.botAction(s, t) }); } assert.deepStrictEqual(E.announceOptions(s.game, 1), [3, 4, 5]);
 
-// Bock
-s = table(); s = run(s, { seat: 0, a: { t: 'bock' } }); s = run(s, { seat: 0, a: { t: 'start' } });
-assert.strictEqual(s.game.bock, 1);
-// Bock: Ein Solo verbraucht kein Bockspiel
-s = table(); s = run(s, { seat: 0, a: { t: 'bock' } }); s = run(s, { seat: 0, a: { t: 'start' } });
-const bockLeft = (x) => x.bock.filter((b) => b > 0).length;
-assert.strictEqual(bockLeft(s), 4);
-const finish = (x, solo) => { x = JSON.parse(JSON.stringify(x)); x.game.phase = 'done'; x.game.result = { solo }; x.game.type = solo ? 'solo_damen' : 'normal'; return x; };
-s = run(finish(s, false), { seat: 0, a: { t: 'next' } }); assert.strictEqual(bockLeft(s), 3); assert.strictEqual(s.game.bock, 1);
-s = run(finish(s, false), { seat: 0, a: { t: 'next' } }); assert.strictEqual(bockLeft(s), 2);
-s = run(finish(s, true), { seat: 0, a: { t: 'next' } }); assert.strictEqual(bockLeft(s), 2, 'Solo darf kein Bockspiel verbrauchen'); assert.strictEqual(s.game.bock, 1);
-s = run(finish(s, false), { seat: 0, a: { t: 'next' } }); assert.strictEqual(bockLeft(s), 1);
-s = run(finish(s, false), { seat: 0, a: { t: 'next' } }); assert.strictEqual(bockLeft(s), 0); assert.strictEqual(s.game.bock, 0);
+// Bock: automatisch bei Nullspiel und Herz-Stich, je Ereignis +4, Solo verbraucht kein Bockspiel
+s = table(); s = run(s, { seat: 0, a: { t: 'start' } });
+assert.ok(E.apply(s, 0, { t: 'bock' }).error, 'Bock lässt sich nicht mehr von Hand ansagen');
+const herz = { cards: [{ seat: 0, card: 'HA0' }, { seat: 1, card: 'HK0' }, { seat: 2, card: 'HA1' }, { seat: 3, card: 'HK1' }], winner: 0, points: 30 };
+function playScripted(x, opts = {}) {
+  // Spiel künstlich zu Ende bringen: Hände leeren, Stiche setzen, letzte Karte regulär spielen lassen
+  x = JSON.parse(JSON.stringify(x));
+  const gg = x.game; gg.phase = 'play'; gg.type = opts.type || 'normal'; gg.re = opts.re || [0, 2];
+  if (opts.soloist !== undefined) gg.soloist = opts.soloist;
+  gg.tricks = tricksFor(gg.re, opts.re0 ?? 130, opts.co0 ?? 110, gg.re.length === 1 ? 4 : 6).slice(0, 9);
+  if (opts.herz) gg.tricks[0] = herz;
+  gg.current = [{ seat: 0, card: 'SK0' }, { seat: 1, card: 'SK1' }, { seat: 2, card: 'CK0' }];
+  gg.hands = [[], [], [], ['CK1']]; gg.turn = 3;
+  return run(x, { seat: 3, a: { t: 'play', card: 'CK1' } });
+}
+s = playScripted(s, { herz: true });
+assert.strictEqual(s.game.result.bockAdded, 4); assert.strictEqual(s.bockLeft, 4);
+s = run(s, { seat: 0, a: { t: 'next' } }); assert.strictEqual(s.game.bock, 1);
+s = playScripted(s); assert.strictEqual(s.bockLeft, 3);            // Bockspiel 1 verbraucht
+s = run(s, { seat: 0, a: { t: 'next' } });
+s = playScripted(s, { type: 'solo_damen', re: [1], soloist: 1, re0: 150, co0: 90 });
+assert.strictEqual(s.game.result.m, 2, 'Solo in der Bockrunde zählt doppelt');
+assert.strictEqual(s.bockLeft, 3, 'Solo verbraucht kein Bockspiel');
+s = run(s, { seat: 0, a: { t: 'next' } });
+s = playScripted(s, { herz: true });                                 // Herz-Stich in der Bockrunde: -1 +4
+assert.strictEqual(s.bockLeft, 6);
+s = run(s, { seat: 0, a: { t: 'next' } });
+s = playScripted(s, { type: 'solo_trumpf', re: [2], soloist: 2, herz: true }); // Herz-Stich im Solo: kein Bock
+assert.strictEqual(s.game.result.bockAdded, 0); assert.strictEqual(s.bockLeft, 6);
+// Altstand mit Bock-Liste wird übernommen
+{ const old = JSON.parse(JSON.stringify(s)); delete old.bockLeft; old.bock = [1, 1, 0, 1]; const r2 = E.apply(old, 0, { t: 'fillBots' }); assert.strictEqual(r2.state.bockLeft, 3); }
+// Nullspiel bringt Bock
+g = mk([0, 2]); g.tricks = tricksFor([0, 2], 125, 115);
+g.tricks[9] = { cards: [{ seat: 0, card: 'DK0' }, { seat: 1, card: 'DA0' }, { seat: 2, card: 'DK1' }, { seat: 3, card: 'SK1' }], winner: 1, points: g.tricks[9].points };
+g.tricks[8] = { cards: [{ seat: 0, card: 'DA1' }, { seat: 1, card: 'SK0' }, { seat: 2, card: 'CK0' }, { seat: 3, card: 'CK1' }], winner: 1, points: g.tricks[8].points };
+r = E.scoreGame(g); assert.ok(r.nullspiel); assert.deepStrictEqual(r.bockEvents, ['Nullspiel']);
+// Herz-Stich in stiller Hochzeit zählt für Bock
+g = mk([3], { stille: true, soloist: 3 }); g.tricks = tricksFor([3], 130, 110, 4); g.tricks[2] = herz;
+r = E.scoreGame(g); assert.strictEqual(r.bockAdded, 4);
 console.log('Alle Tests bestanden.');
