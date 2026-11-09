@@ -1,6 +1,6 @@
 // Versionsnummer an den Dateinamen, damit Browser nie alte und neue Dateien mischen
-import E from './engine.js?v=19';
-import { CARD_DEFS, CARD_BODY } from './cards.js?v=19';
+import E from './engine.js?v=20';
+import { CARD_DEFS, CARD_BODY } from './cards.js?v=20';
 
   const $ = (id) => document.getElementById(id);
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -635,9 +635,13 @@ import { CARD_DEFS, CARD_BODY } from './cards.js?v=19';
     const status = order.map((s) => `<span class="chip">${esc(seatName(s))}: ${g.decl[s] ? (g.decl[s] === 'gesund' ? 'gesund' : 'Vorbehalt') : s === g.turn ? 'überlegt …' : '–'}</span>`).join(' ');
     if (g.turn === m && pendingSolo) {
       const label = E.DECL_LABEL[pendingSolo];
-      return `<div class="panel confirm"><h2>${esc(label)} spielen?</h2>
-        <p class="muted">Bist du sicher? Ein angesagtes Solo kann nicht zurückgenommen werden.</p>
-        <div class="btnrow"><button class="btn primary" data-decl="${pendingSolo}" data-sure="1">Ja, ${esc(label)} spielen</button><button class="btn" data-act="cancelsolo">Abbrechen</button></div></div>`;
+      const txt = {
+        hochzeit: ['Hochzeit ansagen?', 'Bist du sicher? Der erste fremde Fehlstich in den ersten drei Stichen bestimmt deinen Partner, sonst spielst du ein Solo. Sagst du stattdessen „Gesund“, spielst du eine stille Hochzeit.', 'Ja, Hochzeit ansagen'],
+        armut: ['Trumpfabgabe machen?', 'Bist du sicher? Du gibst alle deine Trümpfe ab (aufgefüllt auf drei Karten). Nimmt keiner an, wird neu gegeben.', 'Ja, Trumpfabgabe'],
+      }[pendingSolo] || [`${label} spielen?`, 'Bist du sicher? Ein angesagtes Solo kann nicht zurückgenommen werden.', `Ja, ${label} spielen`];
+      return `<div class="panel confirm"><h2>${esc(txt[0])}</h2>
+        <p class="muted">${esc(txt[1])}</p>
+        <div class="btnrow"><button class="btn primary" data-decl="${pendingSolo}" data-sure="1">${esc(txt[2])}</button><button class="btn" data-act="cancelsolo">Abbrechen</button></div></div>`;
     }
     if (g.turn === m) {
       const o = g.declOptions;
@@ -850,7 +854,7 @@ import { CARD_DEFS, CARD_BODY } from './cards.js?v=19';
         <li>Zählung: Punkte bekommen immer die Verlierer, jeder Punkt kostet 5 Cent.</li>
         <li>Normalspiel: Gewonnen 1, gegen die Alten 1, keine 90/60/30/schwarz je 1, jede erfüllte Absage („keine 90 angesagt“ usw.) 1, Trumpfabgabe gewonnen oder verloren 1 (Hochzeit gibt keinen Extrapunkt). Re angesagt verdoppelt die Summe, Kontra angesagt verdoppelt sie, beides vervierfacht.</li>
         <li>Sonderpunkte (nur ohne Solo, je 1 für die Partei): Doppelkopf (Stich mit mindestens 40 Augen), Herz-Stich durchgegangen, Karlchen gewinnt den letzten Stich, Karlchen gefangen, Fuchs gefangen, Fuchs gewinnt den letzten Stich, beide Kreuz-Damen in einem Stich (für Kontra). Sonderpunkte der Verlierer werden abgezogen. Haben die Verlierer mindestens so viele Sonderpunkte wie die Gewinner Punkte, ist es ein Nullspiel.</li>
-        <li>Solo (auch stille Hochzeit und Hochzeit ohne Partner): gewonnen 8, jede weitere Zeile 4 (keine 90, keine 90 angesagt, keine 60 …). Verliert der Solist, kommt „gegen die Alten“ mit 4 dazu und alles zählt dreifach. Kontra angesagt verdoppelt, Re und Kontra vervierfacht, Re allein ändert nichts. Ein Solo muss bestätigt werden.</li>
+        <li>Solo (auch stille Hochzeit und Hochzeit ohne Partner): gewonnen 8, jede weitere Zeile 4 (keine 90, keine 90 angesagt, keine 60 …). Verliert der Solist, kommt „gegen die Alten“ mit 4 dazu und alles zählt dreifach. Kontra angesagt verdoppelt, Re und Kontra vervierfacht, Re allein ändert nichts. Solo, Hochzeit und Trumpfabgabe müssen bestätigt werden.</li>
         <li>Bockrunde: entsteht automatisch. Jedes Nullspiel und jeder durchgegangene Herz-Stich (nicht im angesagten Solo, wohl aber bei stiller Hochzeit und Hochzeit ohne Partner) bringt 4 Bockspiele dazu. Ein Bockspiel verdoppelt alle Punkte. Ein Solo in der Bockrunde zählt doppelt, verbraucht aber kein Bockspiel.</li>
       </ul></details></div>
       <div class="box"><h3>Tisch</h3>
@@ -963,7 +967,8 @@ import { CARD_DEFS, CARD_BODY } from './cards.js?v=19';
     if (d.leave !== undefined) return act({ t: 'leave', seat: +d.leave });
     if (d.kick !== undefined) return act({ t: 'kick', seat: +d.kick });
     if (d.sort) { sortPref = { game: dealSig(), kind: d.sort }; return renderFelt(); }
-    if (d.decl && d.decl.startsWith('solo_') && !d.sure) { pendingSolo = d.decl; return renderFelt(); }
+    // Solo, Hochzeit und Trumpfabgabe erst nach Rückfrage ansagen
+    if (d.decl && (d.decl.startsWith('solo_') || d.decl === 'hochzeit' || d.decl === 'armut') && !d.sure) { pendingSolo = d.decl; return renderFelt(); }
     if (d.decl) { pendingSolo = null; return act({ t: 'decl', choice: d.decl }); }
     if (d.armut !== undefined) return act({ t: 'armutAnswer', accept: d.armut === '1' });
     if (d.ann) return act({ t: 'announce', level: +d.ann });
