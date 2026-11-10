@@ -125,6 +125,23 @@ while (t.state.game.phase !== 'done') {
 }
 console.log('Partie mit Bot:', t.state.game.result.label, t.state.game.result.points);
 
+// 3b) Neuer Spieler übernimmt direkt den Platz eines abwesenden Mitspielers
+{
+  await t.webSocketMessage(socks[0], JSON.stringify({ t: 'act', a: { t: 'next' } }));
+  const neu = mockSocket(ctx); const NEU = 'NEUERSPIELER00000000X';
+  await t.webSocketMessage(neu, JSON.stringify({ t: 'hello', uid: NEU }));
+  await t.webSocketMessage(neu, JSON.stringify({ t: 'act', a: { t: 'takeover', seat: 1, name: 'Neu' } }));
+  assert.ok(neu.lastError(), 'verbundene Spieler kann man nicht verdrängen');
+  socks[1].close(); await t.webSocketClose(socks[1], 1000);
+  const pointsBefore = JSON.stringify(t.state.games);
+  const handBefore = t.state.game.hands[1].slice();
+  await t.webSocketMessage(neu, JSON.stringify({ t: 'act', a: { t: 'takeover', seat: 1, name: 'Neu' } }));
+  assert.strictEqual(t.state.seats[1].name, 'Neu'); assert.strictEqual(t.state.seats[1].uid, NEU); assert.ok(!t.state.seats[1].bot);
+  assert.deepStrictEqual(neu.last().view.game.hands[1], handBefore, 'der Neue bekommt die Karten des Platzes');
+  assert.strictEqual(JSON.stringify(t.state.games), pointsBefore, 'Spielzettel bleibt unverändert');
+  assert.ok(t.state.log.some((l) => l === 'Neu spielt für Spieler 2 weiter.'));
+  console.log('Platz übernommen: ok');
+}
 // 4) Spielstand übersteht den Neustart des Durable Objects
 const t2 = new Table(ctx, {}); await new Promise((r) => setTimeout(r, 0));
 assert.strictEqual(t2.state.games.length, 2);
