@@ -955,9 +955,27 @@ const DokoEngine = (() => {
     const validSeat = (x) => Number.isInteger(x) && x >= 0 && x < 4;
     let seat = mine;
     switch (a.t) {
-      case 'sit': case 'takeover':
+      case 'sit':
         if (!validSeat(a.seat)) return { error: 'Ungültiger Platz.' };
         a.uid = uid; seat = a.seat; break;
+      case 'takeover': {
+        // Platz eines Bots oder eines abwesenden Mitspielers übernehmen (Spielstand und Punkte bleiben)
+        if (!validSeat(a.seat)) return { error: 'Ungültiger Platz.' };
+        if (mine >= 0) return { error: 'Du sitzt schon am Tisch.' };
+        const s = state.seats[a.seat];
+        if (s && !s.bot) {
+          if (onlineUids && onlineUids.includes(s.uid)) return { error: `${s.name} ist noch verbunden.` };
+          const old = s.name;
+          const r1 = apply(state, a.seat, { t: 'leave', seat: a.seat });
+          if (r1.error) return r1;
+          const st = r1.state;
+          if (!st.seats[a.seat]) return apply(st, a.seat, { t: 'sit', seat: a.seat, uid, name: a.name }); // vor dem Spiel: einfach hinsetzen
+          const r2 = apply(st, a.seat, { t: 'takeover', seat: a.seat, uid, name: a.name });
+          if (!r2.error) r2.state.log.push(`${r2.state.seats[a.seat].name} spielt für ${old} weiter.`);
+          return r2;
+        }
+        a.uid = uid; seat = a.seat; break;
+      }
       case 'rename':
         if (mine < 0) return { error: 'Du sitzt nicht am Tisch.' };
         a.uid = uid; a.seat = mine; break;

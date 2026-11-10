@@ -1,6 +1,6 @@
 // Versionsnummer an den Dateinamen, damit Browser nie alte und neue Dateien mischen
-import E from './engine.js?v=20';
-import { CARD_DEFS, CARD_BODY } from './cards.js?v=20';
+import E from './engine.js?v=21';
+import { CARD_DEFS, CARD_BODY } from './cards.js?v=21';
 
   const $ = (id) => document.getElementById(id);
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -578,8 +578,9 @@ import { CARD_DEFS, CARD_BODY } from './cards.js?v=20';
       if (g.phase === 'play' || g.phase === 'done') meta.push(statHTML(s));
     }
     let take = '';
-    if (st && st.bot && mySeat() < 0 && !readOnly) take = `<button class="mini" data-takeover="${s}">Platz übernehmen</button>`;
-    else if (online && st && !st.bot && !st.online && mySeat() >= 0 && g && g.phase !== 'done') take = `<button class="mini" data-kick="${s}">Durch Bot ersetzen</button>`;
+    const away = online && st && !st.bot && !st.online;
+    if (st && (st.bot || away) && mySeat() < 0 && !readOnly) take = `<button class="mini" data-takeover="${s}">Platz übernehmen</button>`;
+    else if (away && mySeat() >= 0) take = `<button class="mini" data-kick="${s}">Durch Bot ersetzen</button>`;
     return `<div class="seat pos-${pos}${turn ? ' turn' : ''}"><div class="seat-name">${esc(st ? st.name : 'frei')} ${chips.join('')}</div><div class="seat-meta">${meta.join('')}</div>${take}</div>`;
   }
 
@@ -611,7 +612,8 @@ import { CARD_DEFS, CARD_BODY } from './cards.js?v=20';
     const boxes = state.seats.map((s, i) => {
       if (s) {
         const mine = i === m;
-        return `<div class="seatbox taken"><span>${esc(s.name)}${s.bot ? ' <span class="chip bot">Bot</span>' : ''}${online && !s.bot && !s.online ? ' <span class="chip off">offline</span>' : ''}${mine ? ' (du)' : ''}</span>${mine || s.bot ? `<button class="mini" data-leave="${i}">${mine ? 'Aufstehen' : 'Entfernen'}</button>` : ''}</div>`;
+        return `<div class="seatbox taken"><span>${esc(s.name)}${s.bot ? ' <span class="chip bot">Bot</span>' : ''}${online && !s.bot && !s.online ? ' <span class="chip off">offline</span>' : ''}${mine ? ' (du)' : ''}</span>${mine || s.bot ? `<button class="mini" data-leave="${i}">${mine ? 'Aufstehen' : 'Entfernen'}</button>`
+          : online && !s.online ? (m < 0 ? `<button class="btn primary" data-takeover="${i}">Platz übernehmen</button>` : `<button class="mini" data-kick="${i}">Platz freigeben</button>`) : ''}</div>`;
       }
       return `<div class="seatbox"><span>Platz ${i + 1} frei</span>${m < 0 && !readOnly ? `<button class="btn primary" data-sit="${i}">Hinsetzen</button>` : ''}</div>`;
     }).join('');
