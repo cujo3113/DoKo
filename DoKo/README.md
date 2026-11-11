@@ -71,6 +71,7 @@ Diesen Link schickst du deinen Freunden. Fertig.
 | Seite neu geladen | Du sitzt automatisch wieder auf deinem Platz, solange du denselben Browser benutzt. |
 | Mitspieler weg | Bei einem Spieler, der offline ist, erscheint „Durch Bot ersetzen“. Über „Platz übernehmen“ kann er (oder jemand anderes) später zurückkommen. |
 | Ton | Knopf oben rechts. Jeder stellt das für sich ein. |
+| Tisch | Knopf oben (z. B. „Pokertisch“) wechselt zwischen Pokertisch, Holztisch, Spieltisch und Schlicht. Jeder stellt das für sich ein, der Browser merkt es sich. |
 
 ### Tisch-Passwort (optional)
 
