@@ -1,6 +1,6 @@
 // Versionsnummer an den Dateinamen, damit Browser nie alte und neue Dateien mischen
-import E from './engine.js?v=24';
-import { CARD_DEFS, CARD_BODY } from './cards.js?v=24';
+import E from './engine.js?v=25';
+import { CARD_DEFS, CARD_BODY } from './cards.js?v=25';
 
   const $ = (id) => document.getElementById(id);
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -1011,8 +1011,8 @@ import { CARD_DEFS, CARD_BODY } from './cards.js?v=24';
     let reset = '';
     if (state.phase === 'game') {
       reset = confirmReset
-        ? `<span class="notice">Partie beenden?${state.pflichtSoli ? ` Fehlende Pflichtsoli werden mit je ${E.RULES.pflichtPenalty} Punkten eingetragen.` : ''}</span><button class="sidebtn danger" data-act="endpartie">Ja, Partie beenden</button><button class="sidebtn" data-act="noreset">Abbrechen</button>`
-        : `<button class="sidebtn" data-act="askreset"${readOnly || running ? ' disabled' : ''}>Partie beenden</button>${running ? '<span class="notice">geht nach dem laufenden Spiel</span>' : ''}`;
+        ? `<span class="notice">Partie beenden?${running ? ` Das laufende Spiel ${g.no} wird abgebrochen und nicht gewertet.` : ''}${state.pflichtSoli ? ` Fehlende Pflichtsoli werden mit je ${E.RULES.pflichtPenalty} Punkten eingetragen.` : ''}</span><button class="sidebtn danger" data-act="endpartie">Ja, Partie beenden</button><button class="sidebtn" data-act="noreset">Abbrechen</button>`
+        : `<button class="sidebtn" data-act="askreset"${readOnly || m < 0 ? ' disabled' : ''}>Partie beenden</button>${m < 0 ? '<span class="notice">nur für Spieler am Tisch</span>' : ''}`;
     } else if (state.phase === 'ended') reset = `<button class="sidebtn" data-act="reset"${readOnly ? ' disabled' : ''}>Neue Partie starten</button>`;
     const n2 = $('nick2'); const keep2 = n2 ? { v: n2.value, f: document.activeElement === n2 } : null;
     side.innerHTML = `

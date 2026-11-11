@@ -429,7 +429,8 @@ const DokoEngine = (() => {
       }
       case 'endPartie': {
         if (state.phase !== 'game') return err('Es läuft keine Partie.');
-        if (g && g.phase !== 'done') return err('Bitte erst das laufende Spiel zu Ende spielen.');
+        // Ein angefangenes Spiel wird abgebrochen und nicht gewertet (auch nicht als Pflichtsolo).
+        if (g && g.phase !== 'done') log(state, `Spiel ${g.no} abgebrochen, es wird nicht gewertet.`);
         const need = state.pflichtSoli || 0;
         const played = soloCounts(state);
         const missing = played.map((c) => Math.max(0, need - c));
