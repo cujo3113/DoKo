@@ -125,7 +125,7 @@ const DokoEngine = (() => {
     state.phase = 'game';
     state.game = {
       no: state.games.length + 1, dealId: Math.random().toString(36).slice(2, 10), dealer: d, hands, initial: clone(hands),
-      phase: 'vorbehalt', turn: (d + 1) % 4, decl: [null, null, null, null], declLvl: [0, 0, 0, 0],
+      phase: 'vorbehalt', turn: (d + 1) % 4, decl: [null, null, null, null],
       type: null, stille: false, soloist: null, re: [],
       tricks: [], current: [], ann: { re: 0, contra: 0, hist: [] },
       armut: null, hz: null, bock: state.bockLeft > 0 ? 1 : 0, result: null,
@@ -163,30 +163,62 @@ const DokoEngine = (() => {
     g.turn = (g.dealer + 1) % 4; // auch beim Solo: normale Reihenfolge
   }
 
-  // Rang eines Solo-Vorbehalts: zuerst die gleich mit angesagte Absage (keine 90 … schwarz),
-  // dann das Solo selbst (Trumpf > Damen > Buben > Könige).
+  // Rang eines Solo-Gebots: zuerst die Absage (keine 90 … schwarz), dann das Solo (Trumpf > Damen > Buben > Könige).
   function soloRank(type, lvl) { return (lvl || 0) * 10 + (SOLOS.length - SOLOS.indexOf(type)); }
+  // Schlägt Platz a (mit Absage la) den Platz b? Bei Gleichstand gewinnt, wer näher links vom Geber sitzt.
+  function bidBeats(g, a, la, b, lb) {
+    const ra = soloRank(g.decl[a], la), rb = soloRank(g.decl[b], lb);
+    if (ra !== rb) return ra > rb;
+    const ord = order4((g.dealer + 1) % 4);
+    return ord.indexOf(a) < ord.indexOf(b);
+  }
+  // Kleinste Absage, mit der Platz s das führende Gebot überbietet (oder null)
+  function reizMin(g, s) {
+    const r = g.reizen;
+    if (!r || s === r.leader) return null;
+    for (let L = r.lvl[s] + 1; L <= 4; L++) if (bidBeats(g, s, L, r.leader, r.lvl[r.leader])) return L;
+    return null;
+  }
+  function startSolo(state, solo, L) {
+    const g = state.game;
+    g.type = g.decl[solo]; g.soloist = solo; g.re = [solo];
+    if (L > 0) {
+      // Absage beim Reizen gilt wie eine normale Absage (schließt Re ein)
+      g.ann.re = L + 1;
+      g.ann.hist.push({ seat: solo, party: 're', level: L + 1, trick: 0, reizen: true });
+    }
+    g.reizen = null;
+    log(state, `${seatName(state, solo)} spielt ${TYPE_LABEL[g.type]}${L > 0 ? ` mit ${ANN_LABEL.re[L + 1]}` : ''}.`);
+    startPlay(state);
+  }
+  // Nächster Überbotener ist dran; ist keiner mehr übrig, spielt das führende Gebot.
+  function nextReizen(state) {
+    const g = state.game, r = g.reizen;
+    const ord = order4((g.dealer + 1) % 4);
+    for (;;) {
+      const s = ord.find((x) => r.bidders.includes(x) && x !== r.leader && !r.passed.includes(x));
+      if (s === undefined) { startSolo(state, r.leader, r.lvl[r.leader]); return; }
+      if (reizMin(g, s) === null) { r.passed.push(s); log(state, `${seatName(state, s)} kann nicht mehr erhöhen.`); continue; }
+      g.turn = s; return;
+    }
+  }
 
   function resolveVorbehalt(state) {
     const g = state.game;
     const ord = order4((g.dealer + 1) % 4);
-    const lv = (s) => (g.declLvl ? g.declLvl[s] || 0 : 0);
-    let solo;
-    for (const s of ord) { // bei Gleichstand gewinnt, wer näher links vom Geber sitzt
-      if (isSoloType(g.decl[s]) && (solo === undefined || soloRank(g.decl[s], lv(s)) > soloRank(g.decl[solo], lv(solo)))) solo = s;
-    }
+    const solos = ord.filter((s) => isSoloType(g.decl[s]));
     const hz = ord.find((s) => g.decl[s] === 'hochzeit');
     const ar = ord.find((s) => g.decl[s] === 'armut');
-    if (solo !== undefined) {
-      g.type = g.decl[solo]; g.soloist = solo; g.re = [solo];
-      const L = lv(solo);
-      if (L > 0) {
-        // Absage beim Vorbehalt gilt wie eine normale Absage (schließt Re ein)
-        g.ann.re = L + 1;
-        g.ann.hist.push({ seat: solo, party: 're', level: L + 1, trick: 0, vorbehalt: true });
-      }
-      log(state, `${seatName(state, solo)} spielt ${TYPE_LABEL[g.type]}${L > 0 ? ` und sagt gleich ${ANN_LABEL.re[L + 1]} an` : ''}.`);
-      startPlay(state);
+    if (solos.length > 1) {
+      // Mehrere Soli: Wer überboten ist, darf mit einer Absage erhöhen oder passen.
+      let leader = solos[0];
+      for (const s of solos) if (bidBeats(g, s, 0, leader, 0)) leader = s;
+      g.phase = 'reizen';
+      g.reizen = { bidders: solos, lvl: [0, 0, 0, 0], passed: [], leader, raises: 0, high: 0 };
+      log(state, `${solos.length} Spieler wollen ein Solo. Wer überboten ist, kann mit einer Absage erhöhen.`);
+      nextReizen(state);
+    } else if (solos.length === 1) {
+      startSolo(state, solos[0], 0);
     } else if (hz !== undefined) {
       g.type = 'hochzeit'; g.re = [hz];
       g.hz = { bride: hz, partner: null, clar: 0, done: false, alone: false };
@@ -475,15 +507,25 @@ const DokoEngine = (() => {
         if (g.turn !== seat) return err('Du bist nicht dran.');
         if (!declOptions(g, seat).includes(a.choice)) return err('Dieser Vorbehalt ist nicht möglich.');
         g.decl[seat] = a.choice;
-        if (!g.declLvl) g.declLvl = [0, 0, 0, 0];
-        if (isSoloType(a.choice)) {
-          const L = a.level === undefined ? 0 : a.level;
-          if (!Number.isInteger(L) || L < 0 || L > 4) return err('Ungültige Absage.');
-          g.declLvl[seat] = L;
-        }
         log(state, `${seatName(state, seat)}: ${a.choice === 'gesund' ? 'gesund' : 'Vorbehalt'}`);
         g.turn = (seat + 1) % 4;
         if (g.decl.every((d) => d)) resolveVorbehalt(state);
+        break;
+      }
+      case 'reizen': {
+        if (!g || g.phase !== 'reizen') return err('Gerade wird nicht gereizt.');
+        if (g.turn !== seat) return err('Du bist nicht dran.');
+        const r = g.reizen;
+        if (a.level === 0) {
+          r.passed.push(seat);
+          log(state, `${seatName(state, seat)} passt.`);
+        } else {
+          const min = reizMin(g, seat);
+          if (!Number.isInteger(a.level) || min === null || a.level < min || a.level > 4) return err('Damit überbietest du nicht.');
+          r.lvl[seat] = a.level; r.leader = seat; r.raises++; r.high = Math.max(r.high, a.level);
+          log(state, `${seatName(state, seat)} erhöht: ${ANN_LABEL.re[a.level + 1]}.`);
+        }
+        nextReizen(state);
         break;
       }
       case 'armutGive': {
@@ -582,7 +624,7 @@ const DokoEngine = (() => {
   const ALL_KEYS = []; for (const su of SUITS) for (const r of RANKS) ALL_KEYS.push(su + r, su + r);
 
   // Probespiele: Wie oft gewinnt diese Hand das Solo, wenn die übrigen 30 Karten zufällig verteilt sind?
-  function soloWinRate(hand, type, seat) {
+  function soloWinRate(hand, type, seat, need = 121) {
     const kind = kindOf(type);
     const rest = ALL_KEYS.slice();
     hand.forEach((c) => { const i = rest.indexOf(key(c)); if (i >= 0) rest.splice(i, 1); });
@@ -609,7 +651,7 @@ const DokoEngine = (() => {
           turn = cur[wi].seat; cur = []; trickNo++;
         }
       }
-      if (eyes >= 121) wins++;
+      if (eyes >= need) wins++;
     }
     return wins / n;
   }
@@ -923,6 +965,12 @@ const DokoEngine = (() => {
     if (!g || g.turn !== seat) return null;
     const h = g.hands[seat];
     if (g.phase === 'vorbehalt') return { t: 'decl', choice: botDecl(g, seat) };
+    if (g.phase === 'reizen') {
+      // Erhöhen nur, wenn die nötige Absage in den Probespielen fast immer klappt
+      const L = reizMin(g, seat);
+      const need = [121, 151, 181, 211, 240][L || 0];
+      return { t: 'reizen', level: L && RULES.bots.solo && soloWinRate(h, g.decl[seat], seat, need) >= RULES.bots.soloRate ? L : 0 };
+    }
     const lowFirst = (cards) => cards.slice().sort((a, b) => pts(a) - pts(b));
     if (g.phase === 'armut_give') {
       const tr = h.filter((c) => isTrump(c, 'normal'));
@@ -981,7 +1029,15 @@ const DokoEngine = (() => {
       result: done ? clone(g.result) : null,
       annOptions: me >= 0 ? announceOptions(g, me) : [],
       declOptions: me >= 0 && g.phase === 'vorbehalt' ? declOptions(g, me) : [],
-      myDeclLvl: me >= 0 && g.declLvl ? g.declLvl[me] || 0 : 0,
+      // Reizen: öffentlich ist nur, wer erhöht oder passt (steht im Verlauf). Solo-Arten bleiben geheim.
+      reizen: g.reizen ? {
+        raises: g.reizen.raises, high: g.reizen.high,
+        mine: me >= 0 && g.reizen.bidders.includes(me),
+        out: me >= 0 && g.reizen.passed.includes(me),
+        leading: me >= 0 && me === g.reizen.leader,
+        myLvl: me >= 0 ? g.reizen.lvl[me] : 0,
+        min: me >= 0 && me === g.turn ? reizMin(g, me) : null,
+      } : null,
       armut: null,
     };
     if (g.armut) {
@@ -1091,7 +1147,7 @@ const DokoEngine = (() => {
   const euro = (pts) => (pts * RULES.centPerPoint / 100).toLocaleString('de-DE', { style: 'currency', currency: 'EUR' });
 
   return {
-    RULES, SOLOS, soloRank, schmeissReason, viewFor, dispatch, botStep, botDelay, SUIT_SYM, SUIT_NAME, RANK_SHORT, TYPE_LABEL, DECL_LABEL, ANN_LABEL,
+    RULES, SOLOS, soloRank, reizMin, schmeissReason, viewFor, dispatch, botStep, botDelay, SUIT_SYM, SUIT_NAME, RANK_SHORT, TYPE_LABEL, DECL_LABEL, ANN_LABEL,
     newTable, apply, botAction, legalCards, sortHand, kindOf, isTrump, partyOf, knownParty,
     announceOptions, declOptions, scoreGame, totals, euro, soloCounts, cardName, pts, key, suitOf, rankOf, trickWinnerIdx, countTrumps,
   };

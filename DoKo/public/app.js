@@ -1,6 +1,6 @@
 // Versionsnummer an den Dateinamen, damit Browser nie alte und neue Dateien mischen
-import E from './engine.js?v=26';
-import { CARD_DEFS, CARD_BODY } from './cards.js?v=26';
+import E from './engine.js?v=27';
+import { CARD_DEFS, CARD_BODY } from './cards.js?v=27';
 
   const $ = (id) => document.getElementById(id);
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -32,7 +32,6 @@ import { CARD_DEFS, CARD_BODY } from './cards.js?v=26';
   let selected = [];
   let selKey = '';
   let pendingSolo = null;   // Solo gewählt, aber noch nicht bestätigt
-  let pendingLvl = 0;       // beim Solo gleich mit angesagte Absage (0 = keine, 1 = keine 90 … 4 = schwarz)
   let trickClearAt = 0;     // bis wann der fertige Stich noch liegen bleibt
   const TRICK_SHOW_MS = 2000;      // fertiger Stich bleibt 2 Sekunden liegen …
   const LAST_TRICK_SHOW_MS = 5000; // … der 10. Stich 5 Sekunden, erst dann kommt die Abrechnung
@@ -313,6 +312,7 @@ import { CARD_DEFS, CARD_BODY } from './cards.js?v=26';
   const SAY = {
     ann: { 1: { re: 'Re!', contra: 'Kontra!' }, 2: 'Keine neunzig.', 3: 'Keine sechzig.', 4: 'Keine dreißig.', 5: 'Schwarz!' },
     vorbehalt: 'Vorbehalt.',
+    reizen: 'Mehrere Soli … wer bietet mehr?',
     hochzeit: 'Hochzeit … wer will mich?',
     hzPartner: 'Ja, ich will.',
     hzAlone: 'Dann eben allein.',
@@ -499,7 +499,9 @@ import { CARD_DEFS, CARD_BODY } from './cards.js?v=26';
       return;
     }
     if (snap.vb > p.vb && snap.phase === 'vorbehalt') Voice.say(SAY.vorbehalt);
-    if (p.phase === 'vorbehalt' && snap.phase !== 'vorbehalt') {
+    if (p.phase === 'vorbehalt' && snap.phase === 'reizen') Voice.say(SAY.reizen);
+    if (snap.phase === 'reizen' && snap.rz > p.rz) Voice.say(SAY.ann[snap.rzHigh + 1]);
+    if ((p.phase === 'vorbehalt' || p.phase === 'reizen') && snap.phase !== 'vorbehalt' && snap.phase !== 'reizen') {
       if (snap.type === 'hochzeit') Voice.say(SAY.hochzeit);
       else if (snap.type === 'armut') Voice.say(SAY.armut);
       else if (SAY.solo[snap.type]) Voice.say(SAY.solo[snap.type]);
@@ -520,7 +522,7 @@ import { CARD_DEFS, CARD_BODY } from './cards.js?v=26';
     const g = st && st.game;
     const snap = g ? { deal: g.dealId, cur: g.current.length, tricks: g.tricks.length, ann: g.ann.hist.length, phase: g.phase, turn: g.turn,
       vb: g.decl.filter((d) => d && d !== 'gesund').length, type: g.type, hzDone: !!(g.hz && g.hz.done), hzPartner: g.hz ? g.hz.partner : null,
-      taker: g.armut ? g.armut.taker : null, stille: !!g.stille, log: st.log[st.log.length - 1] || '' } : null;
+      taker: g.armut ? g.armut.taker : null, stille: !!g.stille, rz: g.reizen ? g.reizen.raises : 0, rzHigh: g.reizen ? g.reizen.high : 0, log: st.log[st.log.length - 1] || '' } : null;
     speakFor(prevSnap, snap, g);
     if (p0Armut(prevSnap, snap, g)) toast(armutReturnText(g), 7000);
     const p = prevSnap; prevSnap = snap;
@@ -569,7 +571,7 @@ import { CARD_DEFS, CARD_BODY } from './cards.js?v=26';
     soundsFor(state);
     const g = state && state.game;
     const k = g ? `${g.no}-${g.phase}-${g.turn}` : 'none';
-    if (k !== selKey) { selected = []; selKey = k; pendingSolo = null; pendingLvl = 0; }
+    if (k !== selKey) { selected = []; selKey = k; pendingSolo = null; }
     render();
     scheduleBots();
     prevStateObj = state;
@@ -593,7 +595,7 @@ import { CARD_DEFS, CARD_BODY } from './cards.js?v=26';
   const posOf = (s) => (s - base() + 4) % 4;
 
   function publicType(g, viewer) {
-    if (!g.type) return g.phase === 'vorbehalt' ? 'Vorbehalte werden abgefragt' : '–';
+    if (!g.type) return g.phase === 'vorbehalt' ? 'Vorbehalte werden abgefragt' : g.phase === 'reizen' ? 'Mehrere Soli – es wird gereizt' : '–';
     if (g.type === 'hochzeit') {
       if (!g.hz.done) return `Hochzeit von ${seatName(g.hz.bride)} – sucht Partner`;
       if (g.hz.alone) return `Hochzeit – ${seatName(g.hz.bride)} spielt Solo`;
@@ -665,7 +667,7 @@ import { CARD_DEFS, CARD_BODY } from './cards.js?v=26';
     if (!g) return out;
     if (g.dealer === s) out.push(`<span class="chip geber" title="Geber">${DECK_SVG}Geber</span>`);
     const first = (g.dealer + 1) % 4;
-    if (s === first && (g.phase === 'vorbehalt' || g.phase.startsWith('armut') || (g.phase === 'play' && !g.tricks.length && !g.current.length))) out.push('<span class="chip lead" title="spielt die erste Karte aus">▶ kommt raus</span>');
+    if (s === first && (g.phase === 'vorbehalt' || g.phase === 'reizen' || g.phase.startsWith('armut') || (g.phase === 'play' && !g.tricks.length && !g.current.length))) out.push('<span class="chip lead" title="spielt die erste Karte aus">▶ kommt raus</span>');
     else if (g.phase === 'play' && g.turn === s && !g.current.length && g.tricks.length) out.push('<span class="chip lead">▶ spielt aus</span>');
     if (g.armut) {
       if (s === g.armut.poor) out.push(`<span class="chip armutgive" title="gibt die Trümpfe ab">${ICO.give}gibt Trümpfe ab</span>`);
@@ -685,6 +687,7 @@ import { CARD_DEFS, CARD_BODY } from './cards.js?v=26';
     const m = mySeat();
     let cls = 'gesund', title = 'Normalspiel', sub = '';
     if (g.phase === 'vorbehalt') { cls = ''; title = 'Vorbehalte'; sub = 'Gesund oder Vorbehalt?'; }
+    else if (g.phase === 'reizen') { cls = ''; title = 'Reizen'; sub = `Mehrere Soli · ${seatName(g.turn)} ist dran`; }
     else if (g.type === 'armut' || g.phase.startsWith('armut')) {
       cls = 'armut'; title = 'Trumpfabgabe';
       const a = g.armut;
@@ -721,7 +724,7 @@ import { CARD_DEFS, CARD_BODY } from './cards.js?v=26';
     const meta = [];
     if (g) {
       meta.push(`<span class="backs"><i></i>${g.hands[s].length}</span>`);
-      if (g.phase === 'vorbehalt' && g.decl[s]) meta.push(`<span class="chip">${g.decl[s] === 'gesund' ? 'gesund' : 'Vorbehalt'}</span>`);
+      if ((g.phase === 'vorbehalt' || g.phase === 'reizen') && g.decl[s]) meta.push(`<span class="chip">${g.decl[s] === 'gesund' ? 'gesund' : 'Vorbehalt'}</span>`);
       if (party) meta.push(`<span class="chip ${party}">${party === 're' ? 'Re' : 'Kontra'}</span>`);
       meta.push(annChips(g, s));
       if (g.phase === 'play' || g.phase === 'done') meta.push(statHTML(s));
@@ -806,18 +809,7 @@ import { CARD_DEFS, CARD_BODY } from './cards.js?v=26';
       const txt = {
         hochzeit: ['Hochzeit ansagen?', 'Bist du sicher? Der erste fremde Fehlstich in den ersten drei Stichen bestimmt deinen Partner, sonst spielst du ein Solo. Sagst du stattdessen „Gesund“, spielst du eine stille Hochzeit.', 'Ja, Hochzeit ansagen'],
         armut: ['Trumpfabgabe machen?', 'Bist du sicher? Du gibst alle deine Trümpfe ab (aufgefüllt auf drei Karten). Nimmt keiner an, wird neu gegeben.', 'Ja, Trumpfabgabe'],
-      }[pendingSolo];
-      if (!txt) {
-        // Solo: Absage gleich mit ansagen, das hebt den Rang gegenüber anderen Soli
-        const ABS = ['ohne Absage', 'keine 90', 'keine 60', 'keine 30', 'schwarz'];
-        const with_ = pendingLvl ? ` mit „${ABS[pendingLvl]}“` : '';
-        return `<div class="panel confirm"><h2>${esc(label)} spielen?</h2>
-          <p class="muted">Bist du sicher? Ein angesagtes Solo kann nicht zurückgenommen werden.</p>
-          <div class="pflicht"><strong>Gleich absagen?</strong>
-            <span class="seg" role="group" aria-label="Absage zum Solo">${ABS.map((t, i) => `<button class="segbtn" data-sololvl="${i}" aria-pressed="${pendingLvl === i}">${t}</button>`).join('')}</span></div>
-          <p class="muted small">Wollen mehrere ein Solo, gilt: Erst zählt die Absage, dann Trumpf vor Damen vor Buben vor Königen. Eine Absage hier zählt wie jede andere: Schaffst du sie nicht, ist das Solo verloren.</p>
-          <div class="btnrow"><button class="btn primary" data-decl="${pendingSolo}" data-sure="1">${esc(`Ja, ${label}${with_} spielen`)}</button><button class="btn" data-act="cancelsolo">Abbrechen</button></div></div>`;
-      }
+      }[pendingSolo] || [`${label} spielen?`, 'Bist du sicher? Ein angesagtes Solo kann nicht zurückgenommen werden. Wollen mehrere ein Solo, wird anschließend gereizt.', `Ja, ${label} spielen`];
       return `<div class="panel confirm"><h2>${esc(txt[0])}</h2>
         <p class="muted">${esc(txt[1])}</p>
         <div class="btnrow"><button class="btn primary" data-decl="${pendingSolo}" data-sure="1">${esc(txt[2])}</button><button class="btn" data-act="cancelsolo">Abbrechen</button></div></div>`;
@@ -836,6 +828,28 @@ import { CARD_DEFS, CARD_BODY } from './cards.js?v=26';
     const why = m >= 0 ? E.schmeissReason(g.hands[m]) : null;
     const throwBtn = why ? `<div class="btnrow"><button class="btn warn" data-decl="schmeissen">Schmeißen</button><span class="muted">Möglich, weil ${esc(why)}.</span></div>` : '';
     return `<div class="panel"><h2>Vorbehalte</h2><p class="muted">${esc(seatName(g.turn))} ist dran.</p>${throwBtn}<div class="btnrow">${status}</div></div>`;
+  }
+
+  // Mehrere Soli: Überbotene dürfen mit einer Absage erhöhen
+  function reizenHTML(g) {
+    const m = mySeat(), r = g.reizen || {};
+    const ABS = (L) => E.ANN_LABEL.re[L + 1];
+    let from = -1;
+    for (let i = state.log.length - 1; i >= 0; i--) if (/wollen ein Solo\./.test(state.log[i])) { from = i; break; }
+    const steps = from >= 0 ? state.log.slice(from + 1) : [];
+    const stepsHTML = steps.length ? `<ul class="reizlog">${steps.map((l) => `<li>${esc(l)}</li>`).join('')}</ul>` : '';
+    if (g.turn === m && r.min) {
+      const btns = [1, 2, 3, 4].filter((L) => L >= r.min).map((L, i) => `<button class="btn${i === 0 ? ' primary' : ''}" data-reiz="${L}">${esc(ABS(L))}</button>`).join('');
+      return `<div class="panel confirm"><h2>Du bist überboten</h2>
+        <p class="muted">${r.raises ? 'Es wurde erhöht.' : 'Jemand hat ein höheres Solo angesagt.'} Um dein Solo zu spielen, musst du mindestens „${esc(ABS(r.min))}“ ansagen. Die Absage zählt wie jede andere: Schaffst du sie nicht, ist dein Solo verloren.</p>
+        <div class="btnrow">${btns}<button class="btn" data-reiz="0">Passen</button></div>${stepsHTML}</div>`;
+    }
+    const who = esc(seatName(g.turn));
+    let msg;
+    if (r.mine && r.out) msg = `Du hast gepasst. ${who} überlegt, ob er erhöht …`;
+    else if (r.leading) msg = `Dein Solo${r.myLvl ? ` mit „${esc(ABS(r.myLvl))}“` : ''} liegt vorn. ${who} überlegt, ob er erhöht …`;
+    else msg = `Mehrere Spieler wollen ein Solo. ${who} überlegt, ob er erhöht …`;
+    return `<div class="panel"><h2>Es wird gereizt</h2><p class="muted">${msg}</p>${stepsHTML}</div>`;
   }
 
   function armutHTML(g) {
@@ -930,7 +944,8 @@ import { CARD_DEFS, CARD_BODY } from './cards.js?v=26';
   function handHTML(g) {
     const m = mySeat();
     if (!g || m < 0 || !g.hands[m].length) return '';
-    const kind = g.phase === 'vorbehalt' ? sortKind() : E.kindOf(g.type || 'normal');
+    const kind = g.phase === 'vorbehalt' ? sortKind()
+      : g.phase === 'reizen' && /^solo_/.test(g.decl[m] || '') ? E.kindOf(g.decl[m]) : E.kindOf(g.type || 'normal');
     const hand = E.sortHand(g.hands[m], kind);
     const selecting = (g.phase === 'armut_give' || g.phase === 'armut_return') && g.turn === m;
     const playing = g.phase === 'play' && g.turn === m;
@@ -964,6 +979,7 @@ import { CARD_DEFS, CARD_BODY } from './cards.js?v=26';
     if (state.phase === 'ended') mid = endHTML();
     else if (state.phase === 'lobby' || !g) mid = lobbyHTML();
     else if (g.phase === 'vorbehalt') mid = vorbehaltHTML(g);
+    else if (g.phase === 'reizen') mid = reizenHTML(g);
     else if (g.phase.startsWith('armut')) mid = armutHTML(g);
     else if (g.phase === 'done' && Date.now() >= trickClearAt) mid = resultHTML(g);
     else if (g.phase === 'done') mid = trickHTML(g); // 10. Stich bleibt noch liegen
@@ -1035,7 +1051,7 @@ import { CARD_DEFS, CARD_BODY } from './cards.js?v=26';
       <div class="box"><details class="rules"><summary>Hausregeln in dieser App</summary><ul>
         <li>40 Karten ohne Neunen, 10 pro Spieler. Trumpf: Herz 10, Damen, Buben, Karo Ass, 10, König. Bei zwei gleichen Karten sticht die erste.</li>
         <li>Soli: Trumpfsolo (Karo-Solo), Damensolo, Bubensolo, Königssolo. Ein Solo hat Vorrang vor Hochzeit und Trumpfabgabe, und es spielt wie immer der Spieler links vom Geber aus.</li>
-        <li>Mehrere Soli: Beim Vorbehalt kann man gleich „keine 90“ bis „schwarz“ absagen. Es spielt das höchste Gebot: zuerst zählt die Absage, dann Trumpf vor Damen vor Buben vor Königen. Ein Königssolo mit „keine 90“ schlägt also ein Trumpfsolo ohne Absage. Bei Gleichstand spielt, wer näher links vom Geber sitzt. Die anderen sehen bis zur Auflösung nur „Vorbehalt“.</li>
+        <li>Mehrere Soli: Es gilt Trumpf vor Damen vor Buben vor Königen, bei gleichem Solo spielt, wer näher links vom Geber sitzt. Danach wird gereizt: Wer überboten ist, kann mit einer Absage (keine 90 bis schwarz) erhöhen oder passen. Eine höhere Absage schlägt jedes Solo mit niedrigerer Absage, ein Königssolo mit „keine 90“ also ein Trumpfsolo ohne Absage. Dann darf der andere nachziehen, bis nur einer übrig ist. Die Absage zählt wie jede andere. Welches Solo die anderen wollten, bleibt geheim.</li>
         <li>Vorsortieren: Während der Vorbehaltsabfrage kannst du deine Karten nach Normalspiel oder einem Solo sortieren lassen. Das ist keine Ansage, das Spiel sagst du danach wie gewohnt an.</li>
         <li>Schmeißen: Ist dein höchster Trumpf kleiner als der Karo-Bube (oder hast du gar keinen Trumpf) oder hast du mindestens 5 Könige, kannst du während der Vorbehaltsabfrage jederzeit schmeißen. Derselbe Geber gibt neu, das Spiel zählt nicht.</li>
         <li>Hochzeit: Der erste fremde Fehlstich (Fehlfarbe ausgespielt, ein anderer gewinnt) in den ersten drei Stichen macht dessen Gewinner zum Partner. Trumpfstiche zählen nicht. Klappt das nicht, spielt die Hochzeit ein Solo.</li>
@@ -1165,13 +1181,9 @@ import { CARD_DEFS, CARD_BODY } from './cards.js?v=26';
     if (d.pflicht !== undefined) return act({ t: 'pflicht', n: +d.pflicht });
     if (d.sort) { sortPref = { game: dealSig(), kind: d.sort }; return renderFelt(); }
     // Solo, Hochzeit und Trumpfabgabe erst nach Rückfrage ansagen
-    if (d.sololvl !== undefined) { pendingLvl = +d.sololvl; return renderFelt(); }
-    if (d.decl && (d.decl.startsWith('solo_') || d.decl === 'hochzeit' || d.decl === 'armut') && !d.sure) { pendingSolo = d.decl; pendingLvl = 0; return renderFelt(); }
-    if (d.decl) {
-      const level = d.decl.startsWith('solo_') ? pendingLvl : undefined;
-      pendingSolo = null; pendingLvl = 0;
-      return act(level ? { t: 'decl', choice: d.decl, level } : { t: 'decl', choice: d.decl });
-    }
+    if (d.decl && (d.decl.startsWith('solo_') || d.decl === 'hochzeit' || d.decl === 'armut') && !d.sure) { pendingSolo = d.decl; return renderFelt(); }
+    if (d.decl) { pendingSolo = null; return act({ t: 'decl', choice: d.decl }); }
+    if (d.reiz !== undefined) return act({ t: 'reizen', level: +d.reiz });
     if (d.armut !== undefined) return act({ t: 'armutAnswer', accept: d.armut === '1' });
     if (d.ann) return act({ t: 'announce', level: +d.ann });
     if (d.card && g) {
@@ -1189,7 +1201,7 @@ import { CARD_DEFS, CARD_BODY } from './cards.js?v=26';
       case 'next': return act({ t: 'next' });
       case 'armutGive': return act({ t: 'armutGive', cards: selected.slice() });
       case 'armutReturn': return act({ t: 'armutReturn', cards: selected.slice() });
-      case 'cancelsolo': pendingSolo = null; pendingLvl = 0; return renderFelt();
+      case 'cancelsolo': pendingSolo = null; return renderFelt();
       case 'lasttrick': showLast = !showLast; return renderFelt();
       case 'pdf': return downloadPdf();
       case 'editname': { const e = $('nick2'); if (e) { e.focus(); e.select(); e.scrollIntoView({ block: 'center', behavior: 'smooth' }); } return; }

@@ -247,6 +247,7 @@ details.rules summary { cursor: pointer; font-family: var(--font-display); font-
 details.rules ul { margin: 8px 0 0; padding-left: 18px; display: grid; gap: 4px; font-size: .9rem; }
 .notice { font-size: .88rem; color: var(--muted); }
 .panel .small { font-size: .85rem; }
+.reizlog { list-style: none; padding: 0; margin: 10px 0 0; display: grid; gap: 2px; font-size: .9rem; color: var(--felt-muted); }
 .toast { position: fixed; left: 50%; bottom: calc(18px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); background: var(--ink); color: var(--bg); padding: 9px 16px; border-radius: 10px; font-weight: 600; box-shadow: 0 6px 20px rgba(0,0,0,.3); max-width: calc(100% - 32px); z-index: 20; }
 
 /* Grundlage (eigenständige Seite) */
@@ -502,6 +503,6 @@ button, .card, .stat { touch-action: manipulation; }
 </section>
 <div class="toast" id="toast" hidden></div>
 <div class="annflash" id="annflash" hidden aria-live="assertive"></div>
-<script type="module" src="./app.js?v=26"></script>
+<script type="module" src="./app.js?v=27"></script>
 </body>
 </html>
