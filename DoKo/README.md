@@ -71,7 +71,7 @@ Diesen Link schickst du deinen Freunden. Fertig.
 | Seite neu geladen | Du sitzt automatisch wieder auf deinem Platz, solange du denselben Browser benutzt. |
 | Mitspieler weg | Bei einem Spieler, der offline ist, erscheint „Durch Bot ersetzen“. Über „Platz übernehmen“ kann er (oder jemand anderes) später zurückkommen. |
 | Ton | Knopf oben rechts. Jeder stellt das für sich ein. |
-| Chat | Knopf „Chat“ oben. Neue Nachrichten erscheinen kurz unten und als Zahl am Knopf. Die letzten 80 Nachrichten bleiben am Tisch gespeichert. |
+| Chat | Knopf „Chat“ oben. Neue Nachrichten erscheinen kurz unten und als Zahl am Knopf. Die letzten 80 Nachrichten bleiben am Tisch gespeichert. Mit 😊 gibt es weitere Emojis. Die Größe ändert man mit dem Griff oben links (am Handy oben in der Mitte) oder mit ⤢. |
 | Wer ist da? | Oben steht, wie viele gerade verbunden sind. Zuschauer erscheinen mit einem Auge im Spielbanner und unter „Tisch“ in der Seitenleiste. |
 | Einsteigen | Zuschauer tippen bei einem Bot (oder einem Spieler, der offline ist) auf „Platz übernehmen“, auch mitten im Spiel. Karten und Punkte des Platzes bleiben. |
 | Tisch | Knopf oben (z. B. „Pokertisch“) wechselt zwischen Pokertisch, Holztisch, Spieltisch und Schlicht. Jeder stellt das für sich ein, der Browser merkt es sich. |
