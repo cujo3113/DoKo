@@ -457,7 +457,7 @@ button, .card, .stat { touch-action: manipulation; }
 .chatwho { color: var(--muted); font-size: .85rem; margin-right: auto; cursor: help; }
 .chatx { border: 0; background: transparent; color: var(--muted); font-size: 1.5rem; line-height: 1; width: 34px; height: 34px; border-radius: 8px; }
 .chatx:hover { background: rgba(0,0,0,.06); color: var(--ink); }
-.chatlist { list-style: none; margin: 0; padding: 10px 12px; overflow-y: auto; flex: 1 1 auto; min-height: 120px; display: flex; flex-direction: column; gap: 8px; }
+.chatlist { list-style: none; margin: 0; padding: 10px 12px; overflow-y: auto; flex: 1 1 auto; min-height: 60px; display: flex; flex-direction: column; gap: 8px; }
 .chatlist li { align-self: flex-start; max-width: 85%; background: rgba(127,127,127,.13); border-radius: 12px 12px 12px 4px; padding: 6px 10px 5px; display: grid; gap: 1px; }
 .chatlist li.mine { align-self: flex-end; background: var(--felt); color: var(--felt-ink); border-radius: 12px 12px 4px 12px; }
 .chatlist li.empty { align-self: stretch; max-width: none; background: transparent; color: var(--muted); text-align: center; font-size: .9rem; }
@@ -467,14 +467,30 @@ button, .card, .stat { touch-action: manipulation; }
 .chatlist .txt { overflow-wrap: anywhere; white-space: pre-wrap; }
 .chatlist time { font-size: .7rem; color: var(--muted); justify-self: end; }
 .chatlist li.mine time { color: var(--felt-muted); }
-.chatquick { display: flex; gap: 6px; padding: 6px 12px 0; overflow-x: auto; scrollbar-width: none; }
+.chatquick { display: flex; flex-wrap: wrap; gap: 6px; padding: 6px 12px 0; flex: none; }
 .chatquick button { flex: none; border: 1px solid var(--line); background: transparent; color: var(--ink); border-radius: 999px; padding: 3px 10px; font-size: .82rem; }
 .chatquick button:hover { background: rgba(0,0,0,.05); }
-.chatform { display: flex; gap: 8px; padding: 10px 12px 12px; }
+.chatform { display: flex; gap: 8px; padding: 10px 12px 12px; flex: none; }
+.chat header { flex: none; }
+.chat { position: fixed; }
+.chatgrip { position: absolute; top: 0; left: 0; width: 22px; height: 22px; cursor: nwse-resize; touch-action: none; z-index: 1;
+  background: linear-gradient(135deg, transparent 0 4px, var(--muted) 4px 5.5px, transparent 5.5px 8px, var(--muted) 8px 9.5px, transparent 9.5px) no-repeat; opacity: .55; border-top-left-radius: 14px; }
+.chatgrip:hover { opacity: 1; }
+.chat header strong { margin-left: 6px; }
+.emojibtn { flex: none; width: 42px; border: 1px solid var(--line); background: transparent; border-radius: 10px; font-size: 1.25rem; line-height: 1; }
+.emojibtn[aria-expanded="true"] { background: rgba(127,127,127,.15); }
+.emojipick { flex: none; display: grid; grid-template-columns: repeat(auto-fill, minmax(38px, 1fr)); gap: 2px; padding: 8px 12px 0; max-height: 132px; overflow-y: auto; }
+.emojipick[hidden] { display: none; }
+.emojipick button { border: 0; background: transparent; font-size: 1.35rem; line-height: 1; padding: 6px 0; border-radius: 8px; }
+.emojipick button:hover, .emojipick button:focus-visible { background: rgba(127,127,127,.15); }
 .chatform input { flex: 1; min-width: 0; font: inherit; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); }
 .chatform .btn { padding: 8px 14px; }
 @media (max-width: 760px) {
   .chat { left: 8px; right: 8px; bottom: max(8px, env(safe-area-inset-bottom, 0px)); width: auto; max-height: 62dvh; }
+  .chatgrip { left: 50%; width: 56px; height: 18px; margin-left: -28px; cursor: ns-resize; border-radius: 0; background: none; opacity: 1; }
+  .chatgrip::before { content: ""; position: absolute; left: 14px; right: 14px; top: 6px; height: 4px; border-radius: 2px; background: var(--line); }
+  .chat header { padding-top: 14px; }
+  .emojipick { max-height: 110px; }
   .chatform input { font-size: 16px; } /* verhindert Zoom beim Tippen auf dem iPhone */
 }
 .chip.watch { display: inline-flex; align-items: center; gap: 4px; background: rgba(255,255,255,.14); color: var(--felt-ink); text-transform: none; letter-spacing: 0; font-weight: 600; }
@@ -496,13 +512,15 @@ button, .card, .stat { touch-action: manipulation; }
   </div>
 </div>
 <section class="chat" id="chat" hidden aria-label="Tisch-Chat">
-  <header><strong>Tisch-Chat</strong><span class="chatwho" id="chatwho"></span><button class="chatx" id="chatclose" type="button" aria-label="Chat schließen">×</button></header>
+  <span class="chatgrip" id="chatgrip" title="Ziehen ändert die Größe (Doppelklick: Standardgröße)" aria-hidden="true"></span>
+  <header><strong>Tisch-Chat</strong><span class="chatwho" id="chatwho"></span><button class="chatx" id="chatsize" type="button" aria-label="Chat vergrößern" title="Chat vergrößern">⤢</button><button class="chatx" id="chatclose" type="button" aria-label="Chat schließen">×</button></header>
   <ol class="chatlist" id="chatlist" aria-live="polite"></ol>
   <div class="chatquick" role="group" aria-label="Schnellantworten"><button type="button" data-say="👍">👍</button><button type="button" data-say="😂">😂</button><button type="button" data-say="Gut gespielt!">Gut gespielt!</button><button type="button" data-say="Sorry!">Sorry!</button><button type="button" data-say="Bin gleich zurück">Bin gleich zurück</button></div>
-  <form class="chatform" id="chatform" autocomplete="off"><input id="chatinput" maxlength="300" placeholder="Nachricht an den Tisch …" aria-label="Nachricht"><button class="btn primary" type="submit">Senden</button></form>
+  <div class="emojipick" id="emojipick" role="group" aria-label="Emojis" hidden></div>
+  <form class="chatform" id="chatform" autocomplete="off"><button class="emojibtn" id="emojibtn" type="button" aria-label="Emoji einfügen" aria-expanded="false" aria-controls="emojipick">😊</button><input id="chatinput" maxlength="300" placeholder="Nachricht an den Tisch …" aria-label="Nachricht"><button class="btn primary" type="submit">Senden</button></form>
 </section>
 <div class="toast" id="toast" hidden></div>
 <div class="annflash" id="annflash" hidden aria-live="assertive"></div>
-<script type="module" src="./app.js?v=27"></script>
+<script type="module" src="./app.js?v=28"></script>
 </body>
 </html>

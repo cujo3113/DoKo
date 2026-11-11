@@ -1,6 +1,6 @@
 // Versionsnummer an den Dateinamen, damit Browser nie alte und neue Dateien mischen
-import E from './engine.js?v=27';
-import { CARD_DEFS, CARD_BODY } from './cards.js?v=27';
+import E from './engine.js?v=28';
+import { CARD_DEFS, CARD_BODY } from './cards.js?v=28';
 
   const $ = (id) => document.getElementById(id);
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -426,9 +426,71 @@ import { CARD_DEFS, CARD_BODY } from './cards.js?v=27';
     panel.addEventListener('keydown', (e) => { if (e.key === 'Escape') { setOpen(false); btn.focus(); } });
     $('chatform').addEventListener('submit', (e) => {
       e.preventDefault();
-      if (send(input.value)) input.value = '';
+      if (send(input.value)) { input.value = ''; showPicker(false); }
     });
     panel.addEventListener('click', (e) => { const q = e.target.closest('[data-say]'); if (q) send(q.dataset.say); });
+
+    // Emoji-Auswahl: fügt an der Schreibmarke ein, Absenden wie gewohnt
+    const EMOJIS = ['👍', '👎', '👏', '🙏', '💪', '🤞', '👌', '✌️', '😂', '🤣', '😅', '😊', '😉', '😎', '🥳', '😇',
+      '🤔', '🙄', '😬', '😱', '😭', '😡', '🤬', '😈', '🙈', '🤦', '🤷', '😴', '🥱', '🤯', '🍀', '🔥',
+      '💥', '🎉', '🏆', '💸', '💰', '⏰', '☕', '🍺', '🍻', '🍷', '🥨', '🍕', '🦊', '🐷', '🐐', '🃏',
+      '♣️', '♠️', '♥️', '♦️', '❤️', '💔', '✅', '❌', '❓', '‼️'];
+    const pick = $('emojipick'), pickBtn = $('emojibtn');
+    pick.innerHTML = EMOJIS.map((e) => `<button type="button" data-emoji="${e}" aria-label="${e} einfügen">${e}</button>`).join('');
+    function showPicker(v) { pick.hidden = !v; pickBtn.setAttribute('aria-expanded', String(v)); if (v) list.scrollTop = list.scrollHeight; }
+    pickBtn.addEventListener('click', () => showPicker(pick.hidden));
+    pick.addEventListener('click', (e) => {
+      const b = e.target.closest('[data-emoji]'); if (!b) return;
+      const t = b.dataset.emoji, a = input.selectionStart ?? input.value.length, z = input.selectionEnd ?? a;
+      if ((input.value.length + t.length) > 300) return;
+      input.value = input.value.slice(0, a) + t + input.value.slice(z);
+      const pos = a + t.length;
+      if (!matchMedia('(pointer: coarse)').matches) { input.focus(); input.setSelectionRange(pos, pos); }
+      else input.setSelectionRange?.(pos, pos);
+    });
+
+    // Größe: Griff oben links ziehen (am Handy nur die Höhe) oder Knopf „größer/kleiner“
+    const narrow = () => matchMedia('(max-width: 760px)').matches;
+    const clampSize = (w, h) => ({
+      w: Math.round(Math.min(Math.max(w, 280), innerWidth - 32)),
+      h: Math.round(Math.min(Math.max(h, 260), innerHeight - 24)),
+    });
+    let size = null;
+    try { size = JSON.parse(store.get('doko-chat-size') || 'null'); } catch (e) { size = null; }
+    function applySize() {
+      if (!size) { panel.style.width = ''; panel.style.height = ''; panel.style.maxHeight = ''; }
+      else {
+        const c = clampSize(size.w, size.h);
+        panel.style.width = narrow() ? '' : c.w + 'px';
+        panel.style.height = c.h + 'px'; panel.style.maxHeight = 'none';
+      }
+      const big = !!size && size.h >= Math.min(640, innerHeight - 24) - 1;
+      $('chatsize').setAttribute('aria-label', big ? 'Chat verkleinern' : 'Chat vergrößern');
+      $('chatsize').title = big ? 'Chat verkleinern' : 'Chat vergrößern';
+      $('chatsize').textContent = big ? '⤡' : '⤢';
+    }
+    const saveSize = () => store.set('doko-chat-size', size ? JSON.stringify(size) : '');
+    $('chatsize').addEventListener('click', () => {
+      const r = panel.getBoundingClientRect();
+      const bigH = Math.min(640, innerHeight - 24);
+      size = r.height >= bigH - 1 ? null : { w: Math.max(r.width, 460), h: bigH };
+      applySize(); saveSize(); list.scrollTop = list.scrollHeight;
+    });
+    const grip = $('chatgrip');
+    grip.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      const r = panel.getBoundingClientRect(), x0 = e.clientX, y0 = e.clientY;
+      grip.setPointerCapture(e.pointerId);
+      const move = (ev) => {
+        size = clampSize(r.width + (x0 - ev.clientX), r.height + (y0 - ev.clientY));
+        applySize();
+      };
+      const up = () => { grip.removeEventListener('pointermove', move); grip.removeEventListener('pointerup', up); grip.removeEventListener('pointercancel', up); saveSize(); };
+      grip.addEventListener('pointermove', move); grip.addEventListener('pointerup', up); grip.addEventListener('pointercancel', up);
+    });
+    grip.addEventListener('dblclick', () => { size = null; applySize(); saveSize(); });
+    addEventListener('resize', applySize);
+    applySize();
     if (online && store.get('doko-chat') === 'open' && !matchMedia('(max-width: 760px)').matches) setOpen(true);
     renderBtn(); renderList();
     return { receive, renderWho };
