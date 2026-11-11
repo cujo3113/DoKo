@@ -1,6 +1,6 @@
 // Versionsnummer an den Dateinamen, damit Browser nie alte und neue Dateien mischen
-import E from './engine.js?v=21';
-import { CARD_DEFS, CARD_BODY } from './cards.js?v=21';
+import E from './engine.js?v=22';
+import { CARD_DEFS, CARD_BODY } from './cards.js?v=22';
 
   const $ = (id) => document.getElementById(id);
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -335,6 +335,19 @@ import { CARD_DEFS, CARD_BODY } from './cards.js?v=21';
   $('soundbtn').addEventListener('click', () => { Sound.setOn(!Sound.isOn()); renderSoundBtn(); if (Sound.isOn()) setTimeout(() => Sound.play('card'), 30); });
   renderSoundBtn();
 
+  // ---------- Kartengröße ----------
+  let zoom = parseFloat(store.get('doko-zoom')) || 1;
+  function applyZoom() {
+    zoom = Math.min(1.6, Math.max(0.6, Math.round(zoom * 10) / 10));
+    document.documentElement.style.setProperty('--zoom', String(zoom));
+    $('zoomval').textContent = `Karten ${Math.round(zoom * 100)} %`;
+    $('zoomout').disabled = zoom <= 0.6; $('zoomin').disabled = zoom >= 1.6;
+    store.set('doko-zoom', String(zoom));
+  }
+  $('zoomout').addEventListener('click', () => { zoom -= 0.1; applyZoom(); });
+  $('zoomin').addEventListener('click', () => { zoom += 0.1; applyZoom(); });
+  applyZoom();
+
   // ---------- Seitenleiste und Vollbild ----------
   // Kopfzeilenhöhe messen, damit der Tisch genau den restlichen Bildschirm füllt
   const hdr = document.querySelector('header.top');
@@ -437,7 +450,7 @@ import { CARD_DEFS, CARD_BODY } from './cards.js?v=21';
       clearTimeout(soundsFor.t); soundsFor.t = setTimeout(() => { sideHold = null; render(); }, ms + 50);
     }
     else if (snap.cur > p.cur) Sound.play('card');
-    if (snap.ann > p.ann) setTimeout(() => Sound.play('knock'), 60);
+    if (snap.ann > p.ann) { setTimeout(() => Sound.play('knock'), 60); flashAnn(g.ann.hist[g.ann.hist.length - 1]); }
     if (snap.phase === 'done' && p.phase !== 'done') setTimeout(() => Sound.play('end'), LAST_TRICK_SHOW_MS + 100);
     else if (m >= 0 && snap.turn === m && (snap.turn !== p.turn || snap.phase !== p.phase) && snap.phase !== 'done' && !state.seats[m].bot) setTimeout(() => Sound.play('turn'), snap.tricks > p.tricks ? 900 : 250);
   }
@@ -484,6 +497,30 @@ import { CARD_DEFS, CARD_BODY } from './cards.js?v=21';
 
   function annText(g, seat) {
     return g.ann.hist.filter((a) => a.seat === seat).map((a) => E.ANN_LABEL[a.party][a.level]);
+  }
+  // Ansage-Chips in Parteifarbe (blau = Re, rot = Kontra)
+  function annChips(g, seat) {
+    return g.ann.hist.filter((a) => a.seat === seat).map((a) => `<span class="chip annbig ${a.party}">${esc(E.ANN_LABEL[a.party][a.level])}${a.level === 1 ? ' angesagt' : ''}</span>`).join('');
+  }
+  function annClass(g, seat) {
+    const a = g ? g.ann.hist.filter((x) => x.seat === seat) : [];
+    return a.length ? ` ann-${a[0].party}` : '';
+  }
+  // große Einblendung über dem Tisch
+  function flashAnn(a) {
+    const el = $('annflash'); if (!el || !a) return;
+    const label = E.ANN_LABEL[a.party][a.level];
+    el.className = `annflash ${a.party}`;
+    el.innerHTML = `<b>${esc(label)}!</b><span>${esc(seatName(a.seat))}${a.level > 1 ? ` · ${a.party === 're' ? 'Re' : 'Kontra'}` : ''}</span>`;
+    el.hidden = false; void el.offsetWidth; el.classList.add('show');
+    clearTimeout(flashAnn.t); flashAnn.t = setTimeout(() => { el.hidden = true; el.classList.remove('show'); }, 2600);
+  }
+  // Pflichtsoli-Stand eines Platzes
+  function pflichtChip(s) {
+    const n = state.pflichtSoli;
+    if (!n) return '';
+    const c = (state.soloCounts || [0, 0, 0, 0])[s];
+    return `<span class="chip pfl${c >= n ? ' ok' : ''}" title="gespielte Pflichtsoli">Soli ${Math.min(c, n)}/${n}</span>`;
   }
 
   // Augen und Punkte eines Spielers, als Hover-/Tipp-Info
@@ -574,14 +611,15 @@ import { CARD_DEFS, CARD_BODY } from './cards.js?v=21';
       meta.push(`<span class="backs"><i></i>${g.hands[s].length}</span>`);
       if (g.phase === 'vorbehalt' && g.decl[s]) meta.push(`<span class="chip">${g.decl[s] === 'gesund' ? 'gesund' : 'Vorbehalt'}</span>`);
       if (party) meta.push(`<span class="chip ${party}">${party === 're' ? 'Re' : 'Kontra'}</span>`);
-      for (const t of annText(g, s)) meta.push(`<span class="chip ann">${esc(t)}</span>`);
+      meta.push(annChips(g, s));
       if (g.phase === 'play' || g.phase === 'done') meta.push(statHTML(s));
     }
     let take = '';
     const away = online && st && !st.bot && !st.online;
     if (st && (st.bot || away) && mySeat() < 0 && !readOnly) take = `<button class="mini" data-takeover="${s}">Platz übernehmen</button>`;
     else if (away && mySeat() >= 0) take = `<button class="mini" data-kick="${s}">Durch Bot ersetzen</button>`;
-    return `<div class="seat pos-${pos}${turn ? ' turn' : ''}"><div class="seat-name">${esc(st ? st.name : 'frei')} ${chips.join('')}</div><div class="seat-meta">${meta.join('')}</div>${take}</div>`;
+    if (g) meta.push(pflichtChip(s));
+    return `<div class="seat pos-${pos}${turn ? ' turn' : ''}${annClass(g, s)}"><div class="seat-name">${esc(st ? st.name : 'frei')} ${chips.join('')}</div><div class="seat-meta">${meta.join('')}</div>${take}</div>`;
   }
 
   function trickHTML(g) {
@@ -607,6 +645,18 @@ import { CARD_DEFS, CARD_BODY } from './cards.js?v=21';
     return `<div class="trick" aria-live="polite">${last}${slots}<div class="trick-caption">${caption}</div></div>`;
   }
 
+  function endHTML() {
+    const tot = E.totals(state);
+    const pen = state.games.find((x) => x.pflicht);
+    const order = [0, 1, 2, 3].sort((a, b) => tot[a] - tot[b]);
+    return `<div class="panel">
+      <h2>Partie beendet</h2>
+      <p class="muted">${(() => { const n = state.games.filter((x) => !x.pflicht).length; return n === 1 ? '1 Spiel.' : `${n} Spiele.`; })()}${pen ? ` Fehlende Pflichtsoli: ${pen.missing.map((x, i) => (x ? `${esc(seatName(i))} ${x}` : null)).filter(Boolean).join(', ')} (je ${E.RULES.pflichtPenalty} Punkte).` : (state.pflichtSoli ? ' Alle Pflichtsoli wurden gespielt.' : '')}</p>
+      <ul class="lines">${order.map((i) => `<li><span>${esc(seatName(i))}</span><span class="p">${tot[i]} Punkte · ${E.euro(tot[i])}</span></li>`).join('')}</ul>
+      <div class="btnrow"><button class="btn" data-act="pdf">Spielzettel als PDF</button><button class="btn primary" data-act="reset"${readOnly ? ' disabled' : ''}>Neue Partie starten</button></div>
+    </div>`;
+  }
+
   function lobbyHTML() {
     const m = mySeat();
     const boxes = state.seats.map((s, i) => {
@@ -623,9 +673,12 @@ import { CARD_DEFS, CARD_BODY } from './cards.js?v=21';
       <p class="muted">${online ? 'Schick deinen Freunden den Link zu dieser Seite. Wer sie öffnet, sitzt am selben Tisch. Freie Plätze kannst du mit Bots auffüllen.' : 'Übungsmodus: Du spielst allein gegen drei Bots, nur in diesem Fenster.'}</p>
       <label class="nick" for="nick"><strong>Dein Name</strong> <input id="nick" maxlength="20" autocomplete="nickname" placeholder="Name eintragen" value="${esc(nick())}"></label>
       <div class="seatlist">${boxes}</div>
+      <div class="pflicht"><strong>Pflichtsoli pro Spieler</strong>
+        <span class="seg" role="group" aria-label="Pflichtsoli pro Spieler">${[0, 1, 2, 3, 4].map((n) => `<button class="segbtn" data-pflicht="${n}" aria-pressed="${state.pflichtSoli === n}"${m < 0 ? ' disabled' : ''}>${n}</button>`).join('')}</span>
+        <span class="muted">${state.pflichtSoli === null || state.pflichtSoli === undefined ? 'Bitte vor dem Start festlegen.' : 'Für jedes fehlende Solo gibt es am Ende der Partie 100 Punkte.'}</span></div>
       <div class="btnrow">
         <button class="btn" data-act="fillBots"${full || readOnly ? ' disabled' : ''}>Freie Plätze mit Bots füllen</button>
-        <button class="btn primary" data-act="start"${!full || readOnly ? ' disabled' : ''}>Spiel starten</button>
+        <button class="btn primary" data-act="start"${!full || readOnly || typeof state.pflichtSoli !== 'number' ? ' disabled' : ''}>Spiel starten</button>
         ${online ? '<a class="btn" href="?ueben=1" target="_blank" rel="noopener">Allein gegen Bots üben</a>' : ''}
       </div>
     </div>`;
@@ -720,7 +773,7 @@ import { CARD_DEFS, CARD_BODY } from './cards.js?v=21';
     if (m < 0) return `<div class="mebar"><span class="hint">Du schaust zu.${online && !readOnly && state.seats.some((s) => !s) ? ' Setz dich auf einen freien Platz.' : ''}</span></div>`;
     const turn = g && g.phase !== 'done' && g.turn === m;
     let hint = '';
-    if (!g) hint = 'Warte auf den Spielbeginn.';
+    if (!g) hint = state.phase === 'ended' ? 'Partie beendet.' : 'Warte auf den Spielbeginn.';
     else if (g.phase === 'play') {
       if (turn) {
         const legal = E.legalCards(g.hands[m], g.current, E.kindOf(g.type));
@@ -732,12 +785,12 @@ import { CARD_DEFS, CARD_BODY } from './cards.js?v=21';
     const opts = g ? g.annOptions : [];
     const ann = opts.map((L) => `<button class="annbtn ${party}" data-ann="${L}">${E.ANN_LABEL[party][L]}</button>`).join('');
     const pchip = party ? `<span class="chip ${party}">${party === 're' ? 'Re' : 'Kontra'}</span>` : '';
-    const mine = g ? annText(g, m).map((t) => `<span class="chip ann">${esc(t)}</span>`).join('') : '';
+    const mine = g ? annChips(g, m) + pflichtChip(m) : '';
     const geber = markers(g, m).join(' ');
     const sorter = g && g.phase === 'vorbehalt' && g.hands[m].length
       ? `<span class="sortbar" role="group" aria-label="Karten vorsortieren">Sortieren: ${SORTS.map(([k, l]) => `<button data-sort="${k}" aria-pressed="${sortKind() === k}">${l}</button>`).join('')}</span>` : '';
     const myStat = g && (g.phase === 'play' || g.phase === 'done') ? `<span class="seat-meta">${statHTML(m)}</span>` : '';
-    return `<div class="mebar${turn ? ' turn' : ''}"><span class="seat-name">${esc(seatName(m))} <button class="mini" data-act="editname" aria-label="Namen ändern" title="Namen ändern">✎</button> ${geber} ${pchip} ${mine}</span>${myStat}<span class="hint">${hint}</span>${sorter}${ann ? `<span class="annrow" aria-label="Ansagen">${ann}</span>` : ''}</div>`;
+    return `<div class="mebar${turn ? ' turn' : ''}${annClass(g, m)}"><span class="seat-name">${esc(seatName(m))} <button class="mini" data-act="editname" aria-label="Namen ändern" title="Namen ändern">✎</button> ${geber} ${pchip} ${mine}</span>${myStat}<span class="hint">${hint}</span>${sorter}${ann ? `<span class="annrow" aria-label="Ansagen">${ann}</span>` : ''}</div>`;
   }
 
   // Vorsortieren: nur die Ansicht, keine Ansage
@@ -779,7 +832,8 @@ import { CARD_DEFS, CARD_BODY } from './cards.js?v=21';
     if (!state) { felt.innerHTML = '<div class="mid"><div class="panel"><h2>Verbinde mit dem Tisch …</h2><p class="muted">Einen Moment. Falls das länger dauert, prüfe deine Internetverbindung.</p></div></div>'; return; }
     const g = state.game;
     let mid;
-    if (state.phase === 'lobby' || !g) mid = lobbyHTML();
+    if (state.phase === 'ended') mid = endHTML();
+    else if (state.phase === 'lobby' || !g) mid = lobbyHTML();
     else if (g.phase === 'vorbehalt') mid = vorbehaltHTML(g);
     else if (g.phase.startsWith('armut')) mid = armutHTML(g);
     else if (g.phase === 'done' && Date.now() >= trickClearAt) mid = resultHTML(g);
@@ -814,7 +868,8 @@ import { CARD_DEFS, CARD_BODY } from './cards.js?v=21';
       const bockNow = g.bock ? `ja, alles ×2 · noch ${bl} Bockspiel${bl === 1 ? '' : 'e'} inkl. diesem` : (bl ? `nein · ${bl} Bockspiele stehen an` : 'nein');
       const upcoming = 0;
       info = `<dl class="kv"><dt>Spiel</dt><dd>${g.no}</dd><dt>Geber</dt><dd>${esc(seatName(g.dealer))}</dd><dt>Spielart</dt><dd>${esc(publicType(g, m))}</dd>
-        <dt>Re-Seite</dt><dd>${esc(reA)}</dd><dt>Kontra-Seite</dt><dd>${esc(coA)}</dd><dt>Bock</dt><dd>${bockNow}${upcoming ? ` · noch ${upcoming} Bockspiel${upcoming === 1 ? '' : 'e'} danach` : ''}</dd></dl>`;
+        <dt>Re-Seite</dt><dd>${esc(reA)}</dd><dt>Kontra-Seite</dt><dd>${esc(coA)}</dd><dt>Bock</dt><dd>${bockNow}${upcoming ? ` · noch ${upcoming} Bockspiel${upcoming === 1 ? '' : 'e'} danach` : ''}</dd>
+        ${state.pflichtSoli ? `<dt>Pflichtsoli</dt><dd>${state.pflichtSoli} pro Spieler · ${[0, 1, 2, 3].map((i) => `${esc(seatName(i))} ${Math.min(state.soloCounts[i], state.pflichtSoli)}`).join(', ')}</dd>` : ''}</dl>`;
     } else {
       const pending = state.bockLeft || 0;
       info = `<p class="notice">Noch kein Spiel gestartet.${pending ? ` ${pending} Bockspiele stehen an.` : ''}</p>`;
@@ -822,7 +877,7 @@ import { CARD_DEFS, CARD_BODY } from './cards.js?v=21';
     const run = [0, 0, 0, 0];
     const rows = state.games.map((x) => {
       x.points.forEach((p, i) => (run[i] += p));
-      return `<tr class="${x.bock ? 'bock' : ''}"><td class="kind">${x.no} ${esc(x.label)}</td>${run.map((v, i) => `<td>${v}<span class="d">${x.points[i] ? '+' + x.points[i] : '·'}</span></td>`).join('')}</tr>`;
+      return `<tr class="${x.bock ? 'bock' : ''}${x.pflicht ? ' pflichtrow' : ''}"><td class="kind">${x.pflicht ? '' : x.no + ' '}${esc(x.label)}</td>${run.map((v, i) => `<td>${v}<span class="d">${x.points[i] ? '+' + x.points[i] : '·'}</span></td>`).join('')}</tr>`;
     }).join('');
     const zettel = state.games.length
       ? `<table><thead><tr><th>Spiel</th>${names.map((n) => `<th title="${esc(n)}">${esc(n)}</th>`).join('')}</tr></thead><tbody>${rows}</tbody>
@@ -835,9 +890,13 @@ import { CARD_DEFS, CARD_BODY } from './cards.js?v=21';
     const logLines = from >= 0 ? state.log.slice(from) : state.log.slice(-8);
     const logItems = logLines.slice().reverse().map((l) => `<li>${esc(l)}</li>`).join('');
     const logTitle = g ? `Verlauf <small>Spiel ${g.no}</small>` : 'Verlauf';
-    const reset = confirmReset
-      ? `<span class="notice">Punkte und Spielstand löschen?</span><button class="sidebtn danger" data-act="reset">Ja, neue Partie</button><button class="sidebtn" data-act="noreset">Abbrechen</button>`
-      : `<button class="sidebtn" data-act="askreset"${readOnly ? ' disabled' : ''}>Neue Partie</button>`;
+    const running = g && g.phase !== 'done';
+    let reset = '';
+    if (state.phase === 'game') {
+      reset = confirmReset
+        ? `<span class="notice">Partie beenden?${state.pflichtSoli ? ` Fehlende Pflichtsoli werden mit je ${E.RULES.pflichtPenalty} Punkten eingetragen.` : ''}</span><button class="sidebtn danger" data-act="endpartie">Ja, Partie beenden</button><button class="sidebtn" data-act="noreset">Abbrechen</button>`
+        : `<button class="sidebtn" data-act="askreset"${readOnly || running ? ' disabled' : ''}>Partie beenden</button>${running ? '<span class="notice">geht nach dem laufenden Spiel</span>' : ''}`;
+    } else if (state.phase === 'ended') reset = `<button class="sidebtn" data-act="reset"${readOnly ? ' disabled' : ''}>Neue Partie starten</button>`;
     const n2 = $('nick2'); const keep2 = n2 ? { v: n2.value, f: document.activeElement === n2 } : null;
     side.innerHTML = `
       <div class="box"><h3>Dieses Spiel</h3>${info}
@@ -857,6 +916,7 @@ import { CARD_DEFS, CARD_BODY } from './cards.js?v=21';
         <li>Normalspiel: Gewonnen 1, gegen die Alten 1, keine 90/60/30/schwarz je 1, jede erfüllte Absage („keine 90 angesagt“ usw.) 1, Trumpfabgabe gewonnen oder verloren 1 (Hochzeit gibt keinen Extrapunkt). Re angesagt verdoppelt die Summe, Kontra angesagt verdoppelt sie, beides vervierfacht.</li>
         <li>Sonderpunkte (nur ohne Solo, je 1 für die Partei): Doppelkopf (Stich mit mindestens 40 Augen), Herz-Stich durchgegangen, Karlchen gewinnt den letzten Stich, Karlchen gefangen, Fuchs gefangen, Fuchs gewinnt den letzten Stich, beide Kreuz-Damen in einem Stich (für Kontra). Sonderpunkte der Verlierer werden abgezogen. Haben die Verlierer mindestens so viele Sonderpunkte wie die Gewinner Punkte, ist es ein Nullspiel.</li>
         <li>Solo (auch stille Hochzeit und Hochzeit ohne Partner): gewonnen 8, jede weitere Zeile 4 (keine 90, keine 90 angesagt, keine 60 …). Verliert der Solist, kommt „gegen die Alten“ mit 4 dazu und alles zählt dreifach. Kontra angesagt verdoppelt, Re und Kontra vervierfacht, Re allein ändert nichts. Solo, Hochzeit und Trumpfabgabe müssen bestätigt werden.</li>
+        <li>Pflichtsoli: Vor jeder Partie wird festgelegt, wie viele Soli jeder spielen muss (Damen-, Buben-, Königs-, Trumpfsolo, stille Hochzeit, Hochzeit ohne Partner). Beim Beenden der Partie gibt es für jedes fehlende Solo 100 Punkte.</li>
         <li>Bockrunde: entsteht automatisch. Jedes Nullspiel und jeder durchgegangene Herz-Stich (nicht im angesagten Solo, wohl aber bei stiller Hochzeit und Hochzeit ohne Partner) bringt 4 Bockspiele dazu. Ein Bockspiel verdoppelt alle Punkte. Ein Solo in der Bockrunde zählt doppelt, verbraucht aber kein Bockspiel.</li>
       </ul></details></div>
       <div class="box"><h3>Tisch</h3>
@@ -864,7 +924,7 @@ import { CARD_DEFS, CARD_BODY } from './cards.js?v=21';
         <div class="btnrow">${reset}</div>
         ${online ? `<div class="btnrow"><button class="sidebtn" data-act="copylink">Tisch-Link kopieren</button></div><p class="notice" id="linktext">${esc(location.origin + location.pathname + (TABLE === 'stammtisch' ? '' : '?tisch=' + TABLE))}</p>` : ''}
         <p class="notice">${online ? 'Der Spielstand liegt auf dem Server. Jeder bekommt nur seine eigenen Karten zu sehen.' : 'Übungsmodus: Die Partie läuft nur in diesem Fenster.'}</p></div>`;
-    if (keep2) { const e = $('nick2'); e.value = keep2.v; if (keep2.f) e.focus(); }
+    if (keep2 && keep2.f) { const e = $('nick2'); e.value = keep2.v; e.focus(); } // nur beim Tippen den Entwurf behalten
     const z = $('zettel'); if (z) z.scrollTop = z.scrollHeight;
   }
 
@@ -968,6 +1028,7 @@ import { CARD_DEFS, CARD_BODY } from './cards.js?v=21';
     if (d.takeover !== undefined) { const n = nick(); if (!n) return askName(); saveNick(n); return act({ t: 'takeover', seat: +d.takeover, name: n }); }
     if (d.leave !== undefined) return act({ t: 'leave', seat: +d.leave });
     if (d.kick !== undefined) return act({ t: 'kick', seat: +d.kick });
+    if (d.pflicht !== undefined) return act({ t: 'pflicht', n: +d.pflicht });
     if (d.sort) { sortPref = { game: dealSig(), kind: d.sort }; return renderFelt(); }
     // Solo, Hochzeit und Trumpfabgabe erst nach Rückfrage ansagen
     if (d.decl && (d.decl.startsWith('solo_') || d.decl === 'hochzeit' || d.decl === 'armut') && !d.sure) { pendingSolo = d.decl; return renderFelt(); }
@@ -996,6 +1057,7 @@ import { CARD_DEFS, CARD_BODY } from './cards.js?v=21';
       case 'askreset': confirmReset = true; return renderSide();
       case 'noreset': confirmReset = false; return renderSide();
       case 'reset': confirmReset = false; return act({ t: 'reset', keepSeats: true });
+      case 'endpartie': confirmReset = false; return act({ t: 'endPartie' });
       case 'copylink': {
         const text = $('linktext') ? $('linktext').textContent : location.href;
         if (navigator.clipboard) navigator.clipboard.writeText(text).then(() => toast('Link kopiert. Schick ihn deinen Mitspielern.'), () => toast('Kopieren ging nicht. Markiere den Link unter dem Knopf.'));
@@ -1027,6 +1089,7 @@ import { CARD_DEFS, CARD_BODY } from './cards.js?v=21';
     let s = E.newTable();
     s = E.dispatch(s, me.id, { t: 'sit', seat: 0, name: nick() || 'Du' }).state;
     s = E.dispatch(s, me.id, { t: 'fillBots' }).state;
+    s = E.dispatch(s, me.id, { t: 'pflicht', n: 0 }).state;
     s = E.dispatch(s, me.id, { t: 'start' }).state;
     full = s; state = E.viewFor(full, me.id);
     renderMode(); onState();

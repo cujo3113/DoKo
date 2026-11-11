@@ -279,7 +279,7 @@ aside { position: sticky; top: max(12px, env(safe-area-inset-top, 0px)); max-hei
   container-type: inline-size;
   min-height: calc(100dvh - var(--hdr, 50px) - var(--chrome, 56px));
   grid-template-rows: auto auto minmax(0, 1fr) auto auto;
-  --w: clamp(56px, min(11.6cqi, calc((100dvh - 390px) / 4.2)), 136px);
+  --w0: clamp(56px, min(11.6cqi, calc((100dvh - 390px) / 4.2)), 136px);
   --ov: .24;
 }
 .card { width: var(--w); height: calc(var(--w) * 1.4); }
@@ -298,10 +298,10 @@ aside { position: sticky; top: max(12px, env(safe-area-inset-top, 0px)); max-hei
 @media (max-width: 1199px) {
   .layout { grid-template-columns: minmax(0, 1fr); }
   aside { position: static; max-height: none; overflow: visible; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); align-items: start; }
-  .felt { --w: clamp(56px, min(13.5cqi, calc((100dvh - 420px) / 4.2)), 132px); --ov: .34; }
+  .felt { --w0: clamp(56px, min(13.5cqi, calc((100dvh - 420px) / 4.2)), 132px); --ov: .34; }
   #sidebtn { display: none; }
 }
-@media (max-width: 760px) { .felt { --w: clamp(48px, min(16cqi, calc((100dvh - 430px) / 4.2)), 104px); --ov: .45; } }
+@media (max-width: 760px) { .felt { --w0: clamp(48px, min(16cqi, calc((100dvh - 430px) / 4.2)), 104px); --ov: .45; } }
 /* Smartphone */
 @media (max-width: 520px) {
   body { padding-block: 8px 16px; }
@@ -309,7 +309,7 @@ aside { position: sticky; top: max(12px, env(safe-area-inset-top, 0px)); max-hei
   header.top h1 { font-size: 1.35rem; }
   header.top .sub { display: none; }
   .mode { margin-left: 0; width: 100%; justify-content: space-between; }
-  .felt { --w: clamp(44px, min(19cqi, calc((100dvh - 520px) / 4.2)), 92px); --ov: .55; padding: 8px; border-radius: 16px; }
+  .felt { --w0: clamp(44px, min(19cqi, calc((100dvh - 520px) / 4.2)), 92px); --ov: .55; padding: 8px; border-radius: 16px; }
   :root { --chrome: 38px; }
   .mebar { padding: 6px 8px; }
 }
@@ -318,7 +318,7 @@ aside { position: sticky; top: max(12px, env(safe-area-inset-top, 0px)); max-hei
   body { padding-block: 6px 10px; }
   header.top h1 { font-size: 1.15rem; }
   header.top .sub { display: none; }
-  .felt { --w: clamp(40px, min(9cqi, 13vh), 80px); --ov: .3; min-height: 0; padding: 8px; gap: 6px; }
+  .felt { --w0: clamp(40px, min(9cqi, 13vh), 80px); --ov: .3; min-height: 0; padding: 8px; gap: 6px; }
   .trick { height: calc(var(--w) * 2.6 + 30px); }
   .seat { padding: 4px 8px; }
   .mebar { padding: 4px 8px; }
@@ -357,6 +357,45 @@ button, .card, .stat { touch-action: manipulation; }
 .lastview figure.win .card { box-shadow: 0 0 0 3px var(--brass); }
 .confirm { border: 2px solid var(--brass); }
 @media (max-width: 520px) { .banner .gtype { font-size: 1.05rem; padding: 2px 10px; } }
+
+/* Kartengröße: --zoom kommt aus den Knöpfen oben (pro Gerät gemerkt) */
+.felt { --w: calc(var(--w0) * var(--zoom, 1)); }
+.zoom { display: inline-flex; align-items: center; gap: 2px; border: 1px solid var(--line); border-radius: 999px; padding: 1px 4px; background: var(--panel); }
+.zoom .soundbtn { border: 0; background: transparent; min-height: 0; padding: 2px 8px; font-weight: 800; font-size: 1rem; }
+.zoom output { font-size: .78rem; color: var(--muted); min-width: 4.5em; text-align: center; font-variant-numeric: tabular-nums; }
+@media (pointer: coarse) { .zoom .soundbtn { padding: 6px 12px; } }
+
+/* Ansagen deutlich: Parteifarbe, große Chips, leuchtender Rand, Einblendung */
+.chip.annbig { font-size: .82rem; padding: 3px 10px; letter-spacing: .05em; color: #fff; box-shadow: 0 0 0 2px rgba(255,255,255,.55); }
+.chip.annbig.re { background: var(--re); }
+.chip.annbig.contra { background: var(--contra); }
+.seat.ann-re { box-shadow: inset 0 0 0 3px var(--re), 0 0 16px rgba(47,95,168,.6); }
+.seat.ann-contra { box-shadow: inset 0 0 0 3px var(--contra), 0 0 16px rgba(168,70,47,.6); }
+.mebar.ann-re { box-shadow: inset 0 0 0 3px var(--re), 0 0 16px rgba(47,95,168,.6); }
+.mebar.ann-contra { box-shadow: inset 0 0 0 3px var(--contra), 0 0 16px rgba(168,70,47,.6); }
+.seat.turn.ann-re, .seat.turn.ann-contra { outline: 2px solid var(--brass); outline-offset: 2px; }
+.banner .chip.re, .banner .chip.contra { font-size: .95rem; padding: 4px 14px; font-weight: 800; box-shadow: 0 0 0 2px rgba(255,255,255,.55); }
+.annflash { position: fixed; left: 50%; top: 42%; transform: translate(-50%, -50%) scale(.6); z-index: 40; pointer-events: none;
+  display: grid; justify-items: center; gap: 2px; padding: 16px 44px 14px; border-radius: 22px; color: #fff; opacity: 0;
+  box-shadow: 0 0 0 4px rgba(255,255,255,.85), 0 18px 50px rgba(0,0,0,.45); text-align: center; }
+.annflash.re { background: #2f5fa8; }
+.annflash.contra { background: #a8462f; }
+.annflash b { font-family: var(--font-display); font-weight: 800; font-size: clamp(2.6rem, 9vw, 5.5rem); line-height: 1; letter-spacing: .03em; text-transform: uppercase; }
+.annflash span { font-weight: 700; font-size: 1.1rem; opacity: .92; }
+.annflash.show { animation: annpop 2.6s ease forwards; }
+@keyframes annpop { 0% { opacity: 0; transform: translate(-50%, -50%) scale(.6) rotate(-4deg); } 10% { opacity: 1; transform: translate(-50%, -50%) scale(1.06) rotate(-2deg); } 18% { transform: translate(-50%, -50%) scale(1) rotate(-2deg); } 80% { opacity: 1; } 100% { opacity: 0; transform: translate(-50%, -50%) scale(1) rotate(-2deg); } }
+@media (prefers-reduced-motion: reduce) { .annflash.show { animation: none; opacity: 1; transform: translate(-50%, -50%); } }
+
+/* Pflichtsoli */
+.pflicht { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+.seg { display: inline-flex; border-radius: 10px; overflow: hidden; box-shadow: inset 0 0 0 1px rgba(255,255,255,.35); }
+.segbtn { border: 0; background: transparent; color: var(--felt-ink); font-weight: 800; padding: 6px 14px; min-width: 42px; }
+.segbtn + .segbtn { border-left: 1px solid rgba(255,255,255,.25); }
+.segbtn[aria-pressed="true"] { background: var(--brass); color: var(--brass-ink); }
+.chip.pfl { background: rgba(255,255,255,.12); }
+.chip.pfl.ok { background: #2e7d4f; color: #fff; }
+.zettel tr.pflichtrow td { background: rgba(192,57,43,.12); }
+.zettel tr.pflichtrow td.kind { color: #c0392b; font-weight: 700; }
 </style>
 </head>
 <body>
@@ -364,7 +403,7 @@ button, .card, .stat { touch-action: manipulation; }
   <header class="top">
     <h1>Doko-Stammtisch</h1>
     <span class="sub">Doppelkopf ohne Neunen · 10 Karten · eure Hausregeln</span>
-    <span class="mode"><span id="mode"><span class="dot"></span> verbinde …</span><span class="tools"><button class="soundbtn" id="sidebtn" aria-pressed="true">Seitenleiste</button><button class="soundbtn" id="fsbtn" hidden>Vollbild</button><button class="soundbtn" id="voicebtn" aria-pressed="true"></button><button class="soundbtn" id="soundbtn" aria-pressed="true"></button></span></span>
+    <span class="mode"><span id="mode"><span class="dot"></span> verbinde …</span><span class="tools"><span class="zoom" role="group" aria-label="Kartengröße"><button class="soundbtn" id="zoomout" aria-label="Karten kleiner" title="Karten kleiner">−</button><output id="zoomval">Karten 100 %</output><button class="soundbtn" id="zoomin" aria-label="Karten größer" title="Karten größer">+</button></span><button class="soundbtn" id="sidebtn" aria-pressed="true">Seitenleiste</button><button class="soundbtn" id="fsbtn" hidden>Vollbild</button><button class="soundbtn" id="voicebtn" aria-pressed="true"></button><button class="soundbtn" id="soundbtn" aria-pressed="true"></button></span></span>
   </header>
   <div class="layout">
     <section class="felt" id="felt" aria-label="Spieltisch"></section>
@@ -372,6 +411,7 @@ button, .card, .stat { touch-action: manipulation; }
   </div>
 </div>
 <div class="toast" id="toast" hidden></div>
-<script type="module" src="./app.js?v=21"></script>
+<div class="annflash" id="annflash" hidden aria-live="assertive"></div>
+<script type="module" src="./app.js?v=22"></script>
 </body>
 </html>

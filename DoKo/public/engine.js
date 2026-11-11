@@ -6,6 +6,7 @@ const DokoEngine = (() => {
   const RULES = {
     fuchs: true,             // Fuchs gefangen gibt einen Sonderpunkt
     centPerPoint: 5,         // Jeder Punkt kostet die Verlierer 5 Cent
+    pflichtPenalty: 100,     // Strafpunkte je nicht gespieltem Pflichtsolo
     bots: { solo: true, announce: true, think: true, rollouts: 260, soloRate: 0.85, soloSims: 80, stille: true }, // Bot-Verhalten
     hochzeitTricks: 3,       // Klärungsstiche bei der Hochzeit
     armutMaxTrumps: 3,       // Trumpfabgabe bei höchstens so vielen Trümpfen
@@ -111,7 +112,7 @@ const DokoEngine = (() => {
   }
 
   function newTable() {
-    return { v: 1, seats: [null, null, null, null], dealer: 3, bock: [], bockLeft: 0, games: [], game: null, phase: 'lobby', log: [], rev: 0 };
+    return { v: 1, seats: [null, null, null, null], dealer: 3, bock: [], bockLeft: 0, pflichtSoli: null, games: [], game: null, phase: 'lobby', log: [], rev: 0 };
   }
 
   function seatName(state, s) { return state.seats[s] ? state.seats[s].name : `Platz ${s + 1}`; }
@@ -352,7 +353,9 @@ const DokoEngine = (() => {
     const g = state.game;
     const r = scoreGame(g);
     g.result = r; g.phase = 'done';
-    state.games.push({ no: g.no, label: r.label, re: g.re.slice(), soloist: g.soloist, eyes: r.eyes, winner: r.winner, points: r.points, bock: g.bock ? 1 : 0, nullspiel: r.nullspiel, solo: r.solo });
+    // Wer hat ein Solo gespielt? (Damen-, Buben-, Königs-, Trumpfsolo, stille Hochzeit, Hochzeit ohne Partner)
+    const soloSeat = r.solo ? (g.type === 'hochzeit' ? g.hz.bride : g.soloist) : null;
+    state.games.push({ no: g.no, label: r.label, re: g.re.slice(), soloist: g.soloist, soloSeat, eyes: r.eyes, winner: r.winner, points: r.points, bock: g.bock ? 1 : 0, nullspiel: r.nullspiel, solo: r.solo });
     // Bockrunde: ein Bockspiel ist verbraucht, außer es war ein Solo (das verlängert die Runde um 1)
     if (g.bock && !r.solo) state.bockLeft = Math.max(0, state.bockLeft - 1);
     if (r.bockAdded) {
@@ -416,9 +419,32 @@ const DokoEngine = (() => {
         for (let i = 0; i < 4; i++) if (!state.seats[i]) state.seats[i] = { uid: null, name: `Bot ${n++}`, bot: true };
         break;
       }
+      case 'pflicht': {
+        if (state.phase !== 'lobby') return err('Die Pflichtsoli werden vor Beginn der Partie festgelegt.');
+        const n = Number(a.n);
+        if (!Number.isInteger(n) || n < 0 || n > 6) return err('Ungültige Anzahl.');
+        state.pflichtSoli = n;
+        log(state, `${seatName(state, seat)}: ${n === 0 ? 'keine Pflichtsoli' : n === 1 ? '1 Pflichtsolo' : `${n} Pflichtsoli`} pro Spieler.`);
+        break;
+      }
+      case 'endPartie': {
+        if (state.phase !== 'game') return err('Es läuft keine Partie.');
+        if (g && g.phase !== 'done') return err('Bitte erst das laufende Spiel zu Ende spielen.');
+        const need = state.pflichtSoli || 0;
+        const played = soloCounts(state);
+        const missing = played.map((c) => Math.max(0, need - c));
+        if (missing.some((x) => x > 0)) {
+          state.games.push({ no: '–', label: 'Fehlende Pflichtsoli', pflicht: true, missing, points: missing.map((x) => x * RULES.pflichtPenalty), bock: 0, re: [], soloist: null, soloSeat: null, eyes: null, winner: null, solo: false });
+        }
+        state.phase = 'ended';
+        state.game = null;
+        log(state, `Partie beendet.${missing.some((x) => x > 0) ? ' Fehlende Pflichtsoli: ' + missing.map((x, i) => (x ? `${seatName(state, i)} ${x}` : null)).filter(Boolean).join(', ') + '.' : ''}`);
+        break;
+      }
       case 'start': {
         if (state.phase !== 'lobby') return err('Das Spiel läuft schon.');
         if (state.seats.some((s) => !s)) return err('Es braucht vier Spieler.');
+        if (typeof state.pflichtSoli !== 'number') return err('Bitte zuerst festlegen, wie viele Pflichtsoli jeder spielen muss.');
         deal(state, a.hands);
         break;
       }
@@ -507,6 +533,7 @@ const DokoEngine = (() => {
         break;
       }
       case 'next': {
+        if (state.phase !== 'game') return err('Die Partie ist beendet.');
         if (!g || g.phase !== 'done') return err('Das Spiel ist noch nicht vorbei.');
         // Bockspiele wurden schon beim Abrechnen gezählt (siehe finishGame)
         state.dealer = (state.dealer + 1) % 4;
@@ -909,6 +936,7 @@ const DokoEngine = (() => {
     const v = {
       v: state.v, rev: state.rev, dealer: state.dealer, bockLeft: typeof state.bockLeft === 'number' ? state.bockLeft : (state.bock || []).filter((x) => x > 0).length, games: clone(state.games),
       phase: state.phase, log: state.log.slice(), me,
+      pflichtSoli: typeof state.pflichtSoli === 'number' ? state.pflichtSoli : null, soloCounts: soloCounts(state),
       seats: state.seats.map((s, i) => (s ? { name: s.name, bot: !!s.bot, mine: i === me, online: s.bot || !onlineUids || onlineUids.includes(s.uid) } : null)),
       game: null,
     };
@@ -996,7 +1024,7 @@ const DokoEngine = (() => {
         if (onlineUids && onlineUids.includes(s.uid)) return { error: `${s.name} ist noch verbunden.` };
         return apply(state, a.seat, { t: 'leave', seat: a.seat });
       }
-      case 'fillBots': case 'start': case 'next': case 'bock': case 'reset':
+      case 'fillBots': case 'start': case 'next': case 'bock': case 'reset': case 'pflicht': case 'endPartie':
         if (mine < 0) return { error: 'Setz dich zuerst an den Tisch.' };
         break;
       default:
@@ -1022,6 +1050,17 @@ const DokoEngine = (() => {
     return g && g.current.length === 0 && g.tricks.length ? 2200 : 850; // fertiger Stich bleibt 2 Sekunden liegen
   }
 
+  // gespielte Soli je Platz (zählt für die Pflichtsoli)
+  function soloCounts(state) {
+    const c = [0, 0, 0, 0];
+    for (const x of state.games) {
+      if (x.pflicht || !x.solo) continue;
+      const seat = x.soloSeat !== undefined && x.soloSeat !== null ? x.soloSeat : x.soloist;
+      if (seat !== null && seat !== undefined) c[seat]++;
+    }
+    return c;
+  }
+
   function totals(state) {
     const t = [0, 0, 0, 0];
     for (const g of state.games) g.points.forEach((p, i) => (t[i] += p));
@@ -1032,7 +1071,7 @@ const DokoEngine = (() => {
   return {
     RULES, SOLOS, schmeissReason, viewFor, dispatch, botStep, botDelay, SUIT_SYM, SUIT_NAME, RANK_SHORT, TYPE_LABEL, DECL_LABEL, ANN_LABEL,
     newTable, apply, botAction, legalCards, sortHand, kindOf, isTrump, partyOf, knownParty,
-    announceOptions, declOptions, scoreGame, totals, euro, cardName, pts, key, suitOf, rankOf, trickWinnerIdx, countTrumps,
+    announceOptions, declOptions, scoreGame, totals, euro, soloCounts, cardName, pts, key, suitOf, rankOf, trickWinnerIdx, countTrumps,
   };
 })();
 export default DokoEngine;
