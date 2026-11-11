@@ -231,42 +231,70 @@ s = run(s, { seat: 2, a: { t: 'decl', choice: 'solo_buben' } });
 s = run(s, { seat: 3, a: { t: 'decl', choice: 'gesund' } });
 assert.strictEqual(s.game.type, 'solo_buben'); assert.strictEqual(s.game.turn, 0); // normale Reihenfolge
 
-// Rangfolge mehrerer Soli: erst die Absage beim Vorbehalt, dann Trumpf > Damen > Buben > Könige, dann Sitzfolge
+// Mehrere Soli: Rangfolge Trumpf > Damen > Buben > Könige, dann Reizen mit Absagen
 {
   const solos = (decls) => {
     let x = table(); x = run(x, { seat: 0, a: { t: 'start', hands } });
-    decls.forEach(([choice, level], seat) => { x = run(x, { seat, a: level === undefined ? { t: 'decl', choice } : { t: 'decl', choice, level } }); });
+    decls.forEach((choice, seat) => { x = run(x, { seat, a: { t: 'decl', choice } }); });
     return x;
   };
-  let x = solos([['solo_koenige'], ['solo_trumpf'], ['gesund'], ['solo_buben']]);
-  assert.strictEqual(x.game.type, 'solo_trumpf'); assert.strictEqual(x.game.soloist, 1, 'Trumpfsolo schlägt Königssolo');
-  x = solos([['solo_buben'], ['gesund'], ['solo_damen'], ['solo_koenige']]);
-  assert.strictEqual(x.game.soloist, 2, 'Damen schlägt Buben und Könige');
-  x = solos([['solo_koenige', 1], ['solo_trumpf'], ['gesund'], ['gesund']]);
-  assert.strictEqual(x.game.type, 'solo_koenige'); assert.strictEqual(x.game.soloist, 0, 'Königssolo keine 90 schlägt Trumpfsolo');
-  assert.strictEqual(x.game.ann.re, 2); assert.ok(x.game.ann.hist[0].vorbehalt);
-  assert.ok(x.log.some((l) => /spielt Königssolo und sagt gleich keine 90 an\./.test(l)));
-  assert.deepStrictEqual(E.announceOptions(x.game, 0), [3, 4, 5], 'weitere Absagen ab keine 60');
-  assert.deepStrictEqual(E.announceOptions(x.game, 1), [1, 2, 3, 4, 5], 'Kontra bleibt möglich');
-  x = solos([['solo_trumpf', 1], ['solo_buben', 2], ['gesund'], ['solo_damen', 2]]);
-  assert.strictEqual(x.game.soloist, 3, 'bei gleicher Absage zählt das Solo');
-  assert.strictEqual(x.game.ann.re, 3);
-  x = solos([['gesund'], ['solo_damen', 1], ['gesund'], ['solo_damen', 1]]);
-  assert.strictEqual(x.game.soloist, 1, 'Gleichstand: wer näher links vom Geber sitzt');
-  x = solos([['hochzeit'], ['gesund'], ['solo_koenige', 4], ['gesund']]);
-  assert.strictEqual(x.game.ann.re, 5);
-  x = playOut(x); assert.strictEqual(x.game.result.ann.re, 5);
-  // Absage gibt es nur zum Solo und nur bis schwarz
-  let y = table(); y = run(y, { seat: 0, a: { t: 'start', hands } });
-  assert.ok(E.apply(y, 0, { t: 'decl', choice: 'solo_damen', level: 5 }).error);
-  assert.ok(E.apply(y, 0, { t: 'decl', choice: 'solo_damen', level: 1.5 }).error);
-  y = run(y, { seat: 0, a: { t: 'decl', choice: 'gesund', level: 3 } });
-  assert.strictEqual(y.game.declLvl[0], 0);
-  // geheim: die anderen sehen weder Solo noch Absage
-  y = run(y, { seat: 1, a: { t: 'decl', choice: 'solo_buben', level: 2 } });
-  const v = E.viewFor(y, y.seats[2].uid);
-  assert.strictEqual(v.game.decl[1], 'vorbehalt'); assert.strictEqual(v.game.myDeclLvl, 0); assert.ok(!JSON.stringify(v).includes('declLvl'));
-  console.log('Rangfolge der Soli: ok');
+  const reiz = (x, seat, level) => run(x, { seat, a: { t: 'reizen', level } });
+  // nur ein Solo: kein Reizen
+  let x = solos(['hochzeit', 'solo_koenige', 'gesund', 'gesund']);
+  assert.strictEqual(x.game.phase, 'play'); assert.strictEqual(x.game.soloist, 1); assert.strictEqual(x.game.ann.re, 0);
+  // Königssolo (Platz 0) gegen Trumpfsolo (Platz 1): Platz 0 ist überboten und darf erhöhen
+  x = solos(['solo_koenige', 'solo_trumpf', 'gesund', 'gesund']);
+  assert.strictEqual(x.game.phase, 'reizen'); assert.strictEqual(x.game.turn, 0);
+  assert.strictEqual(E.reizMin(x.game, 0), 1, 'Könige brauchen keine 90');
+  assert.ok(E.apply(x, 1, { t: 'reizen', level: 1 }).error, 'der Führende ist nicht dran');
+  assert.ok(E.apply(x, 0, { t: 'reizen', level: 5 }).error);
+  x = reiz(x, 0, 1);                                   // Könige keine 90
+  assert.strictEqual(x.game.turn, 1); assert.strictEqual(E.reizMin(x.game, 1), 1, 'Trumpf hält mit keine 90');
+  x = reiz(x, 1, 1);                                   // Trumpf keine 90
+  assert.strictEqual(x.game.turn, 0); assert.strictEqual(E.reizMin(x.game, 0), 2);
+  x = reiz(x, 0, 0);                                   // Könige passt
+  assert.strictEqual(x.game.phase, 'play'); assert.strictEqual(x.game.type, 'solo_trumpf'); assert.strictEqual(x.game.soloist, 1);
+  assert.strictEqual(x.game.ann.re, 2); assert.ok(x.game.ann.hist[0].reizen);
+  assert.ok(x.log.includes('Platz 1 erhöht: keine 90.') || x.log.some((l) => /erhöht: keine 90\./.test(l)));
+  assert.ok(x.log.some((l) => /spielt Trumpfsolo mit keine 90\./.test(l)));
+  assert.deepStrictEqual(E.announceOptions(x.game, 1), [3, 4, 5], 'weitere Absagen ab keine 60');
+  assert.deepStrictEqual(E.announceOptions(x.game, 0), [1, 2, 3, 4, 5], 'Kontra bleibt möglich');
+  x = playOut(x); assert.strictEqual(x.game.result.ann.re, 2);
+  // Überbotener passt sofort: höheres Solo spielt ohne Absage
+  x = solos(['solo_buben', 'gesund', 'solo_damen', 'gesund']);
+  assert.strictEqual(x.game.turn, 0); x = reiz(x, 0, 0);
+  assert.strictEqual(x.game.soloist, 2); assert.strictEqual(x.game.ann.re, 0);
+  // Gleiches Solo: wer näher links vom Geber sitzt, führt; der andere braucht keine 90, der erste hält mit keine 90
+  x = solos(['gesund', 'solo_damen', 'gesund', 'solo_damen']);
+  assert.strictEqual(x.game.turn, 3); assert.strictEqual(E.reizMin(x.game, 3), 1);
+  x = reiz(x, 3, 1); assert.strictEqual(x.game.turn, 1); assert.strictEqual(E.reizMin(x.game, 1), 1, 'Gleichstand hält');
+  x = reiz(x, 1, 1); x = reiz(x, 3, 3);               // Platz 3 springt auf keine 30
+  assert.strictEqual(x.game.turn, 1); assert.strictEqual(E.reizMin(x.game, 1), 3);
+  x = reiz(x, 1, 4);                                   // schwarz
+  assert.strictEqual(x.game.phase, 'play', 'Platz 3 kann schwarz nicht mehr überbieten');
+  assert.strictEqual(x.game.soloist, 1); assert.strictEqual(x.game.ann.re, 5);
+  assert.ok(x.log.some((l) => /kann nicht mehr erhöhen/.test(l)));
+  // Drei Soli
+  x = solos(['solo_koenige', 'solo_buben', 'solo_trumpf', 'gesund']);
+  assert.strictEqual(x.game.turn, 0); x = reiz(x, 0, 0);
+  assert.strictEqual(x.game.turn, 1); x = reiz(x, 1, 1);
+  assert.strictEqual(x.game.turn, 2); x = reiz(x, 2, 0);
+  assert.strictEqual(x.game.soloist, 1); assert.strictEqual(x.game.type, 'solo_buben');
+  // Geheim: Solo-Arten bleiben verdeckt, nur der Dran-Seiende sieht seine Mindest-Absage
+  let y = table(); y.seats[0] = { uid: 'U0', name: 'A', bot: false }; y.seats[1] = { uid: 'U1', name: 'B', bot: false };
+  y = run(y, { seat: 0, a: { t: 'start', hands } });
+  y = run(y, { seat: 0, a: { t: 'decl', choice: 'solo_koenige' } }); y = run(y, { seat: 1, a: { t: 'decl', choice: 'solo_trumpf' } });
+  y = run(y, { seat: 2, a: { t: 'decl', choice: 'gesund' } }); y = run(y, { seat: 3, a: { t: 'decl', choice: 'gesund' } });
+  const v0 = E.viewFor(y, 'U0'), v1 = E.viewFor(y, 'U1');
+  assert.strictEqual(v0.game.reizen.min, 1); assert.strictEqual(v1.game.reizen.min, null); assert.strictEqual(v1.game.reizen.leading, true);
+  assert.strictEqual(v1.game.decl[0], 'vorbehalt'); assert.strictEqual(v0.game.decl[1], 'vorbehalt');
+  assert.ok(!JSON.stringify(v0).includes('solo_trumpf') && !JSON.stringify(v1).includes('solo_koenige'));
+  // Bots reizen selbständig bis zum Ende
+  let z = table(); z = run(z, { seat: 0, a: { t: 'start', hands } });
+  for (const [seat, choice] of [[0, 'solo_damen'], [1, 'solo_buben'], [2, 'solo_trumpf'], [3, 'gesund']]) z = run(z, { seat, a: { t: 'decl', choice } });
+  for (let i = 0; i < 20 && z.game.phase === 'reizen'; i++) z = E.botStep(z);
+  assert.strictEqual(z.game.phase, 'play');
+  console.log('Soli reizen: ok');
 }
 
 // Hochzeit: fremde Trumpfstiche zählen nicht, nach 3 Stichen ohne fremden Fehlstich -> Solo
