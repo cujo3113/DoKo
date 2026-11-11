@@ -231,6 +231,44 @@ s = run(s, { seat: 2, a: { t: 'decl', choice: 'solo_buben' } });
 s = run(s, { seat: 3, a: { t: 'decl', choice: 'gesund' } });
 assert.strictEqual(s.game.type, 'solo_buben'); assert.strictEqual(s.game.turn, 0); // normale Reihenfolge
 
+// Rangfolge mehrerer Soli: erst die Absage beim Vorbehalt, dann Trumpf > Damen > Buben > Könige, dann Sitzfolge
+{
+  const solos = (decls) => {
+    let x = table(); x = run(x, { seat: 0, a: { t: 'start', hands } });
+    decls.forEach(([choice, level], seat) => { x = run(x, { seat, a: level === undefined ? { t: 'decl', choice } : { t: 'decl', choice, level } }); });
+    return x;
+  };
+  let x = solos([['solo_koenige'], ['solo_trumpf'], ['gesund'], ['solo_buben']]);
+  assert.strictEqual(x.game.type, 'solo_trumpf'); assert.strictEqual(x.game.soloist, 1, 'Trumpfsolo schlägt Königssolo');
+  x = solos([['solo_buben'], ['gesund'], ['solo_damen'], ['solo_koenige']]);
+  assert.strictEqual(x.game.soloist, 2, 'Damen schlägt Buben und Könige');
+  x = solos([['solo_koenige', 1], ['solo_trumpf'], ['gesund'], ['gesund']]);
+  assert.strictEqual(x.game.type, 'solo_koenige'); assert.strictEqual(x.game.soloist, 0, 'Königssolo keine 90 schlägt Trumpfsolo');
+  assert.strictEqual(x.game.ann.re, 2); assert.ok(x.game.ann.hist[0].vorbehalt);
+  assert.ok(x.log.some((l) => /spielt Königssolo und sagt gleich keine 90 an\./.test(l)));
+  assert.deepStrictEqual(E.announceOptions(x.game, 0), [3, 4, 5], 'weitere Absagen ab keine 60');
+  assert.deepStrictEqual(E.announceOptions(x.game, 1), [1, 2, 3, 4, 5], 'Kontra bleibt möglich');
+  x = solos([['solo_trumpf', 1], ['solo_buben', 2], ['gesund'], ['solo_damen', 2]]);
+  assert.strictEqual(x.game.soloist, 3, 'bei gleicher Absage zählt das Solo');
+  assert.strictEqual(x.game.ann.re, 3);
+  x = solos([['gesund'], ['solo_damen', 1], ['gesund'], ['solo_damen', 1]]);
+  assert.strictEqual(x.game.soloist, 1, 'Gleichstand: wer näher links vom Geber sitzt');
+  x = solos([['hochzeit'], ['gesund'], ['solo_koenige', 4], ['gesund']]);
+  assert.strictEqual(x.game.ann.re, 5);
+  x = playOut(x); assert.strictEqual(x.game.result.ann.re, 5);
+  // Absage gibt es nur zum Solo und nur bis schwarz
+  let y = table(); y = run(y, { seat: 0, a: { t: 'start', hands } });
+  assert.ok(E.apply(y, 0, { t: 'decl', choice: 'solo_damen', level: 5 }).error);
+  assert.ok(E.apply(y, 0, { t: 'decl', choice: 'solo_damen', level: 1.5 }).error);
+  y = run(y, { seat: 0, a: { t: 'decl', choice: 'gesund', level: 3 } });
+  assert.strictEqual(y.game.declLvl[0], 0);
+  // geheim: die anderen sehen weder Solo noch Absage
+  y = run(y, { seat: 1, a: { t: 'decl', choice: 'solo_buben', level: 2 } });
+  const v = E.viewFor(y, y.seats[2].uid);
+  assert.strictEqual(v.game.decl[1], 'vorbehalt'); assert.strictEqual(v.game.myDeclLvl, 0); assert.ok(!JSON.stringify(v).includes('declLvl'));
+  console.log('Rangfolge der Soli: ok');
+}
+
 // Hochzeit: fremde Trumpfstiche zählen nicht, nach 3 Stichen ohne fremden Fehlstich -> Solo
 function hz() { let x = table(); x = run(x, { seat: 0, a: { t: 'start', hands } }); x = run(x, { seat: 0, a: { t: 'decl', choice: 'hochzeit' } }); for (const p of [1, 2, 3]) x = run(x, { seat: p, a: { t: 'decl', choice: 'gesund' } }); return x; }
 const plays = (x, list) => { for (const [seat, card] of list) x = run(x, { seat, a: { t: 'play', card } }); return x; };
