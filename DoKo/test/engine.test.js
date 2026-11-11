@@ -331,7 +331,14 @@ r = E.scoreGame(g); assert.strictEqual(r.bockAdded, 4);
   x = run(x, { seat: 0, a: { t: 'pflicht', n: 2 } });
   x = run(x, { seat: 0, a: { t: 'start' } });
   assert.ok(E.apply(x, 0, { t: 'pflicht', n: 1 }).error, 'während der Partie nicht mehr änderbar');
-  assert.ok(E.apply(x, 0, { t: 'endPartie' }).error, 'nicht mitten im Spiel beenden');
+  {
+    // mitten im Spiel beenden: laufendes Spiel zählt nicht, Pflichtsoli werden abgerechnet
+    const y = run(x, { seat: 0, a: { t: 'endPartie' } });
+    assert.strictEqual(y.phase, 'ended'); assert.strictEqual(y.game, null);
+    assert.strictEqual(y.games.length, 1); assert.ok(y.games[0].pflicht); assert.deepStrictEqual(y.games[0].points, [200, 200, 200, 200]);
+    assert.ok(y.log.some((l) => /^Spiel 1 abgebrochen/.test(l)));
+    assert.strictEqual(E.botStep(y), null, 'Bots spielen danach nicht weiter');
+  }
   x.games = [
     { no: 1, label: 'Damensolo', solo: true, soloist: 1, soloSeat: 1, points: [8, 0, 8, 8] },
     { no: 2, label: 'Stille Hochzeit', solo: true, soloist: 3, soloSeat: 3, points: [0, 0, 0, 36] },
