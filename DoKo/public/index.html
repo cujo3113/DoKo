@@ -441,6 +441,41 @@ button, .card, .stat { touch-action: manipulation; }
   .felt.t-poker::before { inset: 8px; border-radius: 20px; }
   .felt.t-classic, .felt.t-wood { border-width: 9px; }
 }
+
+/* ===== Tisch-Chat und Anwesenheit ===== */
+#chatbtn { position: relative; }
+#chatbtn .badge { position: absolute; top: -7px; right: -7px; min-width: 19px; height: 19px; padding: 0 5px; border-radius: 999px; background: var(--danger); color: #fff; font-size: .72rem; font-weight: 800; display: grid; place-items: center; box-shadow: 0 0 0 2px var(--bg); }
+.chat { position: fixed; right: max(16px, env(safe-area-inset-right, 0px)); bottom: max(16px, env(safe-area-inset-bottom, 0px)); width: min(360px, calc(100vw - 32px)); max-height: min(520px, 70dvh); display: flex; flex-direction: column; background: var(--panel); color: var(--ink); border: 1px solid var(--line); border-radius: 14px; box-shadow: 0 16px 44px rgba(0,0,0,.32); z-index: 30; overflow: hidden; }
+.chat[hidden] { display: none; }
+.chat header { display: flex; align-items: center; gap: 8px; padding: 10px 10px 10px 14px; border-bottom: 1px solid var(--line); }
+.chat header strong { font-family: var(--font-display); font-size: 1.05rem; }
+.chatwho { color: var(--muted); font-size: .85rem; margin-right: auto; cursor: help; }
+.chatx { border: 0; background: transparent; color: var(--muted); font-size: 1.5rem; line-height: 1; width: 34px; height: 34px; border-radius: 8px; }
+.chatx:hover { background: rgba(0,0,0,.06); color: var(--ink); }
+.chatlist { list-style: none; margin: 0; padding: 10px 12px; overflow-y: auto; flex: 1 1 auto; min-height: 120px; display: flex; flex-direction: column; gap: 8px; }
+.chatlist li { align-self: flex-start; max-width: 85%; background: rgba(127,127,127,.13); border-radius: 12px 12px 12px 4px; padding: 6px 10px 5px; display: grid; gap: 1px; }
+.chatlist li.mine { align-self: flex-end; background: var(--felt); color: var(--felt-ink); border-radius: 12px 12px 4px 12px; }
+.chatlist li.empty { align-self: stretch; max-width: none; background: transparent; color: var(--muted); text-align: center; font-size: .9rem; }
+.chatlist .who { font-weight: 700; font-size: .8rem; color: var(--felt); }
+.chatlist .who small { font-weight: 500; color: var(--muted); }
+.chatlist li.mine .who { color: var(--felt-muted); }
+.chatlist .txt { overflow-wrap: anywhere; white-space: pre-wrap; }
+.chatlist time { font-size: .7rem; color: var(--muted); justify-self: end; }
+.chatlist li.mine time { color: var(--felt-muted); }
+.chatquick { display: flex; gap: 6px; padding: 6px 12px 0; overflow-x: auto; scrollbar-width: none; }
+.chatquick button { flex: none; border: 1px solid var(--line); background: transparent; color: var(--ink); border-radius: 999px; padding: 3px 10px; font-size: .82rem; }
+.chatquick button:hover { background: rgba(0,0,0,.05); }
+.chatform { display: flex; gap: 8px; padding: 10px 12px 12px; }
+.chatform input { flex: 1; min-width: 0; font: inherit; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); }
+.chatform .btn { padding: 8px 14px; }
+@media (max-width: 760px) {
+  .chat { left: 8px; right: 8px; bottom: max(8px, env(safe-area-inset-bottom, 0px)); width: auto; max-height: 62dvh; }
+  .chatform input { font-size: 16px; } /* verhindert Zoom beim Tippen auf dem iPhone */
+}
+.chip.watch { display: inline-flex; align-items: center; gap: 4px; background: rgba(255,255,255,.14); color: var(--felt-ink); text-transform: none; letter-spacing: 0; font-weight: 600; }
+.chip.watch .ico, .watchline .ico { width: 15px; height: 15px; }
+.watchline { display: flex; align-items: center; gap: 6px; margin: 8px 0 0; }
+.present strong { color: var(--ink); }
 </style>
 </head>
 <body>
@@ -448,15 +483,21 @@ button, .card, .stat { touch-action: manipulation; }
   <header class="top">
     <h1>Doko-Stammtisch</h1>
     <span class="sub">Doppelkopf ohne Neunen · 10 Karten · eure Hausregeln</span>
-    <span class="mode"><span id="mode"><span class="dot"></span> verbinde …</span><span class="tools"><span class="zoom" role="group" aria-label="Kartengröße"><button class="soundbtn" id="zoomout" aria-label="Karten kleiner" title="Karten kleiner">−</button><output id="zoomval">Karten 100 %</output><button class="soundbtn" id="zoomin" aria-label="Karten größer" title="Karten größer">+</button></span><button class="soundbtn" id="tablebtn" title="Tisch wechseln"></button><button class="soundbtn" id="sidebtn" aria-pressed="true">Seitenleiste</button><button class="soundbtn" id="fsbtn" hidden>Vollbild</button><button class="soundbtn" id="voicebtn" aria-pressed="true"></button><button class="soundbtn" id="soundbtn" aria-pressed="true"></button></span></span>
+    <span class="mode"><span id="mode"><span class="dot"></span> verbinde …</span><span class="tools"><span class="zoom" role="group" aria-label="Kartengröße"><button class="soundbtn" id="zoomout" aria-label="Karten kleiner" title="Karten kleiner">−</button><output id="zoomval">Karten 100 %</output><button class="soundbtn" id="zoomin" aria-label="Karten größer" title="Karten größer">+</button></span><button class="soundbtn" id="chatbtn" aria-controls="chat" hidden></button><button class="soundbtn" id="tablebtn" title="Tisch wechseln"></button><button class="soundbtn" id="sidebtn" aria-pressed="true">Seitenleiste</button><button class="soundbtn" id="fsbtn" hidden>Vollbild</button><button class="soundbtn" id="voicebtn" aria-pressed="true"></button><button class="soundbtn" id="soundbtn" aria-pressed="true"></button></span></span>
   </header>
   <div class="layout">
     <section class="felt" id="felt" aria-label="Spieltisch"></section>
     <aside id="side"></aside>
   </div>
 </div>
+<section class="chat" id="chat" hidden aria-label="Tisch-Chat">
+  <header><strong>Tisch-Chat</strong><span class="chatwho" id="chatwho"></span><button class="chatx" id="chatclose" type="button" aria-label="Chat schließen">×</button></header>
+  <ol class="chatlist" id="chatlist" aria-live="polite"></ol>
+  <div class="chatquick" role="group" aria-label="Schnellantworten"><button type="button" data-say="👍">👍</button><button type="button" data-say="😂">😂</button><button type="button" data-say="Gut gespielt!">Gut gespielt!</button><button type="button" data-say="Sorry!">Sorry!</button><button type="button" data-say="Bin gleich zurück">Bin gleich zurück</button></div>
+  <form class="chatform" id="chatform" autocomplete="off"><input id="chatinput" maxlength="300" placeholder="Nachricht an den Tisch …" aria-label="Nachricht"><button class="btn primary" type="submit">Senden</button></form>
+</section>
 <div class="toast" id="toast" hidden></div>
 <div class="annflash" id="annflash" hidden aria-live="assertive"></div>
-<script type="module" src="./app.js?v=23"></script>
+<script type="module" src="./app.js?v=24"></script>
 </body>
 </html>

@@ -1,6 +1,6 @@
 // Versionsnummer an den Dateinamen, damit Browser nie alte und neue Dateien mischen
-import E from './engine.js?v=23';
-import { CARD_DEFS, CARD_BODY } from './cards.js?v=23';
+import E from './engine.js?v=24';
+import { CARD_DEFS, CARD_BODY } from './cards.js?v=24';
 
   const $ = (id) => document.getElementById(id);
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -49,7 +49,12 @@ import { CARD_DEFS, CARD_BODY } from './cards.js?v=23';
     const el = $('nick') || $('nick2');
     if (el) { el.focus(); el.scrollIntoView({ block: 'center', behavior: 'smooth' }); }
   }
-  function saveNick(v) { store.set('doko-nick', v); }
+  function saveNick(v) {
+    const old = store.get('doko-nick');
+    store.set('doko-nick', v);
+    // Zuschauer melden ihren Namen, damit die anderen sehen, wer zuschaut
+    if (online && v !== old && ws && ws.readyState === 1) ws.send(JSON.stringify({ t: 'nick', name: v }));
+  }
 
   function toast(msg, ms = 3200) {
     const t = $('toast'); t.textContent = msg; t.hidden = false;
@@ -73,6 +78,7 @@ import { CARD_DEFS, CARD_BODY } from './cards.js?v=23';
       let m; try { m = JSON.parse(ev.data); } catch (e) { return; }
       if (m.t === 'welcome') { needPassword = false; pwError = ''; conn = 'online'; renderMode(); }
       else if (m.t === 'state') { state = m.view; conn = 'online'; renderMode(); onState(); }
+      else if (m.t === 'chat') Chat.receive(m);
       else if (m.t === 'error') {
         if (m.code === 'password') { needPassword = true; pwError = m.message; render(); }
         else toast(m.message || 'Das hat nicht geklappt.');
@@ -87,7 +93,7 @@ import { CARD_DEFS, CARD_BODY } from './cards.js?v=23';
     pingTimer = setInterval(() => { if (ws && ws.readyState === 1) ws.send('{"t":"ping"}'); }, 30000);
   }
   function hello() {
-    if (ws && ws.readyState === 1) ws.send(JSON.stringify({ t: 'hello', uid: me.id, password: store.get('doko-pw:' + TABLE) || '' }));
+    if (ws && ws.readyState === 1) ws.send(JSON.stringify({ t: 'hello', uid: me.id, name: nick(), password: store.get('doko-pw:' + TABLE) || '' }));
   }
   function scheduleReconnect() {
     clearTimeout(retryTimer);
@@ -261,6 +267,7 @@ import { CARD_DEFS, CARD_BODY } from './cards.js?v=23';
       },
       turn() { extras(); const t = ctx.currentTime; modes(t, [[880, 0.35, 0.05], [3520, 0.06, 0.012]]); modes(t + 0.1, [[1175, 0.4, 0.04], [4700, 0.05, 0.008]]); },
       end() { extras(); const t = ctx.currentTime; [523, 659, 784].forEach((f, i) => modes(t + i * 0.13, [[f, 0.9, 0.07], [f * 4, 0.12, 0.012]])); },
+      chat() { extras(); const t = ctx.currentTime; modes(t, [[1320, 0.18, 0.025], [2640, 0.05, 0.006]]); },
     };
     function play(name) { if (ready() && fx[name]) try { fx[name](); } catch (e) {} }
     function setOn(v) { on = v; try { localStorage.setItem('doko-sound', v ? 'on' : 'off'); } catch (e) {} if (v) ensure(); }
@@ -366,6 +373,65 @@ import { CARD_DEFS, CARD_BODY } from './cards.js?v=23';
   }
   $('tablebtn').addEventListener('click', () => { tableIdx = (tableIdx + 1) % TABLES.length; applyTable(); });
   applyTable();
+
+  // ---------- Tisch-Chat (nur am gemeinsamen Tisch) ----------
+  const Chat = (() => {
+    const panel = $('chat'), list = $('chatlist'), input = $('chatinput'), btn = $('chatbtn');
+    let msgs = [], unread = 0, open = false;
+    const ICON_CHAT = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h16v11H9l-5 4z"/></svg>';
+    const time = (ts) => new Date(ts).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+    function renderBtn() {
+      btn.hidden = !online;
+      btn.setAttribute('aria-expanded', String(open));
+      btn.innerHTML = `${ICON_CHAT}Chat${unread ? `<span class="badge" aria-label="${unread} ungelesen">${unread > 9 ? '9+' : unread}</span>` : ''}`;
+    }
+    function renderList() {
+      const atEnd = list.scrollHeight - list.scrollTop - list.clientHeight < 40;
+      list.innerHTML = msgs.length
+        ? msgs.map((c) => `<li class="${c.mine ? 'mine' : ''}"><span class="who">${esc(c.mine ? 'Du' : c.name)}${c.seat < 0 && !c.mine ? ' <small>(schaut zu)</small>' : ''}</span><span class="txt">${esc(c.text)}</span><time>${time(c.ts)}</time></li>`).join('')
+        : '<li class="empty">Noch keine Nachrichten. Schreib als Erster etwas an den Tisch.</li>';
+      if (atEnd || open) list.scrollTop = list.scrollHeight;
+    }
+    function renderWho() {
+      const el = $('chatwho'); if (!el) return;
+      el.textContent = state && state.present ? `${state.present.length} da` : '';
+      el.title = presentText();
+    }
+    function setOpen(v) {
+      open = v; panel.hidden = !v;
+      store.set('doko-chat', v ? 'open' : 'closed');
+      if (v) { unread = 0; renderList(); renderWho(); if (!matchMedia('(pointer: coarse)').matches) input.focus(); }
+      renderBtn();
+    }
+    function send(text) {
+      text = String(text || '').trim().slice(0, 300);
+      if (!text) return false;
+      if (!ws || ws.readyState !== 1) { toast('Keine Verbindung zum Tisch. Ich verbinde neu …'); connect(); return false; }
+      ws.send(JSON.stringify({ t: 'chat', text }));
+      return true;
+    }
+    function receive(m) {
+      if (m.list) { msgs = m.list; renderList(); return; }
+      if (!m.add || msgs.some((c) => c.id === m.add.id)) return;
+      msgs.push(m.add); if (msgs.length > 80) msgs = msgs.slice(-80);
+      renderList();
+      if (!m.add.mine) {
+        if (!open) { unread++; renderBtn(); toast(`${m.add.name}: ${m.add.text.length > 90 ? m.add.text.slice(0, 88) + ' …' : m.add.text}`, 4500); }
+        Sound.play('chat');
+      }
+    }
+    btn.addEventListener('click', () => setOpen(!open));
+    $('chatclose').addEventListener('click', () => { setOpen(false); btn.focus(); });
+    panel.addEventListener('keydown', (e) => { if (e.key === 'Escape') { setOpen(false); btn.focus(); } });
+    $('chatform').addEventListener('submit', (e) => {
+      e.preventDefault();
+      if (send(input.value)) input.value = '';
+    });
+    panel.addEventListener('click', (e) => { const q = e.target.closest('[data-say]'); if (q) send(q.dataset.say); });
+    if (online && store.get('doko-chat') === 'open' && !matchMedia('(max-width: 760px)').matches) setOpen(true);
+    renderBtn(); renderList();
+    return { receive, renderWho };
+  })();
 
   // ---------- Seitenleiste und Vollbild ----------
   // Kopfzeilenhöhe messen, damit der Tisch genau den restlichen Bildschirm füllt
@@ -474,7 +540,31 @@ import { CARD_DEFS, CARD_BODY } from './cards.js?v=23';
     else if (m >= 0 && snap.turn === m && (snap.turn !== p.turn || snap.phase !== p.phase) && snap.phase !== 'done' && !state.seats[m].bot) setTimeout(() => Sound.play('turn'), snap.tricks > p.tricks ? 900 : 250);
   }
 
+  // ---------- Anwesenheit ----------
+  const watchers = () => (online && state && state.present ? state.present.filter((p) => p.seat < 0) : []);
+  function presentText() {
+    if (!state || !state.present) return '';
+    return state.present.map((p) => `${p.name}${p.me ? ' (du)' : ''} – ${p.seat >= 0 ? 'Platz ' + (p.seat + 1) : 'schaut zu'}`).join(', ');
+  }
+  let prevPresent = null;
+  function presenceNews() {
+    if (!online || !state || !state.present) return;
+    const now = state.present.filter((p) => !p.me).map((p) => p.name);
+    if (prevPresent) {
+      const fresh = state.present.filter((p) => !p.me && p.seat < 0 && !prevPresent.includes(p.name));
+      if (fresh.length) toast(`${fresh.map((p) => p.name).join(' und ')} ${fresh.length > 1 ? 'schauen' : 'schaut'} jetzt zu.`);
+    }
+    prevPresent = now;
+  }
+  function watchChip() {
+    const w = watchers().filter((p) => !p.me);
+    if (!w.length) return '';
+    return `<span class="chip watch" title="Schaut zu: ${esc(w.map((p) => p.name).join(', '))}">${ICO.eye}${esc(w.length > 2 ? w.length + ' Zuschauer' : w.map((p) => p.name).join(', '))}</span>`;
+  }
+
   function onState() {
+    presenceNews();
+    Chat.renderWho();
     soundsFor(state);
     const g = state && state.game;
     const k = g ? `${g.no}-${g.phase}-${g.turn}` : 'none';
@@ -565,6 +655,7 @@ import { CARD_DEFS, CARD_BODY } from './cards.js?v=23';
     give: '<svg class="ico" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><rect x="3" y="5" width="9" height="13" rx="1.5"/><path d="M14 11.5h7m-3-3l3 3-3 3" stroke-linecap="round"/></svg>',
     take: '<svg class="ico" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><rect x="12" y="5" width="9" height="13" rx="1.5"/><path d="M3 11.5h7m-3-3l3 3-3 3" stroke-linecap="round"/></svg>',
     swap: '<svg class="ico" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h14m-3-3l3 3-3 3M20 16H6m3-3l-3 3 3 3"/></svg>',
+    eye: '<svg class="ico" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>',
   };
 
   // Geber, wer rauskommt, wer am Zug ist
@@ -612,6 +703,7 @@ import { CARD_DEFS, CARD_BODY } from './cards.js?v=23';
     if (g.ann.contra) right.push(`<span class="chip contra">${E.ANN_LABEL.contra[g.ann.contra]}${g.ann.contra > 1 ? ' (Kontra)' : ''}</span>`);
     if (g.bock) right.push(`<span class="chip bock" title="Alle Punkte zählen doppelt">BOCK ×2 · noch ${state.bockLeft}</span>`);
     if (g.phase === 'play') right.push(`<span class="chip">Stich ${Math.min(10, g.tricks.length + 1)}/10</span>`);
+    right.unshift(watchChip());
     const icon = cls === 'armut' ? ICO.swap : (g.type === 'hochzeit' ? ICO.rings : '');
     return `<div class="banner"><span class="gtype ${cls}">${icon}${esc(title)}</span>${sub ? `<span class="gsub">${esc(sub)}</span>` : ''}<span class="gright">${right.join('')}</span></div>`;
   }
@@ -681,7 +773,7 @@ import { CARD_DEFS, CARD_BODY } from './cards.js?v=23';
     const boxes = state.seats.map((s, i) => {
       if (s) {
         const mine = i === m;
-        return `<div class="seatbox taken"><span>${esc(s.name)}${s.bot ? ' <span class="chip bot">Bot</span>' : ''}${online && !s.bot && !s.online ? ' <span class="chip off">offline</span>' : ''}${mine ? ' (du)' : ''}</span>${mine || s.bot ? `<button class="mini" data-leave="${i}">${mine ? 'Aufstehen' : 'Entfernen'}</button>`
+        return `<div class="seatbox taken"><span>${esc(s.name)}${s.bot ? ' <span class="chip bot">Bot</span>' : ''}${online && !s.bot && !s.online ? ' <span class="chip off">offline</span>' : ''}${mine ? ' (du)' : ''}</span>${s.bot && m < 0 && !readOnly ? `<button class="btn primary" data-takeover="${i}">Platz übernehmen</button>` : ''}${mine || s.bot ? `<button class="mini" data-leave="${i}">${mine ? 'Aufstehen' : 'Entfernen'}</button>`
           : online && !s.online ? (m < 0 ? `<button class="btn primary" data-takeover="${i}">Platz übernehmen</button>` : `<button class="mini" data-kick="${i}">Platz freigeben</button>`) : ''}</div>`;
       }
       return `<div class="seatbox"><span>Platz ${i + 1} frei</span>${m < 0 && !readOnly ? `<button class="btn primary" data-sit="${i}">Hinsetzen</button>` : ''}</div>`;
@@ -692,6 +784,7 @@ import { CARD_DEFS, CARD_BODY } from './cards.js?v=23';
       <p class="muted">${online ? 'Schick deinen Freunden den Link zu dieser Seite. Wer sie öffnet, sitzt am selben Tisch. Freie Plätze kannst du mit Bots auffüllen.' : 'Übungsmodus: Du spielst allein gegen drei Bots, nur in diesem Fenster.'}</p>
       <label class="nick" for="nick"><strong>Dein Name</strong> <input id="nick" maxlength="20" autocomplete="nickname" placeholder="Name eintragen" value="${esc(nick())}"></label>
       <div class="seatlist">${boxes}</div>
+      ${watchers().length ? `<p class="muted watchline">${ICO.eye}Schaut zu: ${esc(watchers().map((p) => p.name + (p.me ? ' (du)' : '')).join(', '))}</p>` : ''}
       <div class="pflicht"><strong>Pflichtsoli pro Spieler</strong>
         <span class="seg" role="group" aria-label="Pflichtsoli pro Spieler">${[0, 1, 2, 3, 4].map((n) => `<button class="segbtn" data-pflicht="${n}" aria-pressed="${state.pflichtSoli === n}"${m < 0 ? ' disabled' : ''}>${n}</button>`).join('')}</span>
         <span class="muted">${state.pflichtSoli === null || state.pflichtSoli === undefined ? 'Bitte vor dem Start festlegen.' : 'Für jedes fehlende Solo gibt es am Ende der Partie 100 Punkte.'}</span></div>
@@ -789,7 +882,12 @@ import { CARD_DEFS, CARD_BODY } from './cards.js?v=23';
 
   function meBar(g) {
     const m = mySeat();
-    if (m < 0) return `<div class="mebar"><span class="hint">Du schaust zu.${online && !readOnly && state.seats.some((s) => !s) ? ' Setz dich auf einen freien Platz.' : ''}</span></div>`;
+    if (m < 0) {
+      const extra = !online || readOnly ? ''
+        : state.seats.some((s) => !s) ? ' Setz dich auf einen freien Platz.'
+        : state.seats.some((s) => s && (s.bot || !s.online)) ? ' Zum Mitspielen bei einem Bot (oder einem Spieler, der offline ist) auf „Platz übernehmen“ tippen.' : ' Alle Plätze sind besetzt.';
+      return `<div class="mebar"><span class="hint">Du schaust zu.${extra}</span></div>`;
+    }
     const turn = g && g.phase !== 'done' && g.turn === m;
     let hint = '';
     if (!g) hint = state.phase === 'ended' ? 'Partie beendet.' : 'Warte auf den Spielbeginn.';
@@ -940,6 +1038,7 @@ import { CARD_DEFS, CARD_BODY } from './cards.js?v=23';
       </ul></details></div>
       <div class="box"><h3>Tisch</h3>
         <form class="btnrow" id="nameform"><label class="namelabel" for="nick2">Dein Name</label><input id="nick2" class="nameinput" maxlength="20" autocomplete="nickname" placeholder="Name eintragen" value="${esc(m >= 0 ? seatName(m) : nick())}"><button class="sidebtn" type="submit">${m >= 0 ? 'Name ändern' : 'Merken'}</button></form>
+        ${online && state.present && state.present.length ? `<p class="notice present"><strong>Gerade da:</strong> ${state.present.map((p) => `${esc(p.name)}${p.me ? ' (du)' : ''} <span class="muted">${p.seat >= 0 ? 'Platz ' + (p.seat + 1) : 'schaut zu'}</span>`).join(' · ')}</p>` : ''}
         <div class="btnrow">${reset}</div>
         ${online ? `<div class="btnrow"><button class="sidebtn" data-act="copylink">Tisch-Link kopieren</button></div><p class="notice" id="linktext">${esc(location.origin + location.pathname + (TABLE === 'stammtisch' ? '' : '?tisch=' + TABLE))}</p>` : ''}
         <p class="notice">${online ? 'Der Spielstand liegt auf dem Server. Jeder bekommt nur seine eigenen Karten zu sehen.' : 'Übungsmodus: Die Partie läuft nur in diesem Fenster.'}</p></div>`;
@@ -950,7 +1049,10 @@ import { CARD_DEFS, CARD_BODY } from './cards.js?v=23';
   function renderMode() {
     const el = $('mode');
     if (conn === 'local') el.innerHTML = '<span class="dot"></span> Übungsmodus gegen Bots';
-    else if (conn === 'online') el.innerHTML = `<span class="dot on"></span> verbunden · Tisch „${esc(TABLE)}“`;
+    else if (conn === 'online') {
+      const n = state && state.present ? state.present.length : 0;
+      el.innerHTML = `<span class="dot on"></span> verbunden · Tisch „${esc(TABLE)}“${n ? ` · <span title="${esc(presentText())}">${n} da</span>` : ''}`;
+    }
     else el.innerHTML = '<span class="dot wait"></span> verbinde …';
   }
 
