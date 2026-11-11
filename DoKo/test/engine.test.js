@@ -17,6 +17,7 @@ function playOut(state, hook) {
 function table() {
   let s = E.newTable();
   s = run(s, { seat: 0, a: { t: 'fillBots' } });
+  s = run(s, { seat: 0, a: { t: 'pflicht', n: 0 } });
   return s;
 }
 
@@ -194,6 +195,7 @@ console.log('Stille Hochzeit:', s.game.result.points);
   let x = E.newTable();
   x = E.dispatch(x, U, { t: 'sit', seat: 0, name: 'Solist' }).state;
   x = E.dispatch(x, U, { t: 'fillBots' }).state;
+  x = E.dispatch(x, U, { t: 'pflicht', n: 0 }).state;
   x = E.apply(x, 0, { t: 'start', hands }).state;
   for (const p of [0, 1, 2, 3]) x = E.apply(x, p, { t: 'decl', choice: 'gesund' }).state;
   const seen = () => [E.viewFor(x, U), E.viewFor(x, 'niemand')].map((v) => [v.game.stille, v.game.soloist]);
@@ -322,4 +324,39 @@ r = E.scoreGame(g); assert.ok(r.nullspiel); assert.deepStrictEqual(r.bockEvents,
 // Herz-Stich in stiller Hochzeit zählt für Bock
 g = mk([3], { stille: true, soloist: 3 }); g.tricks = tricksFor([3], 130, 110, 4); g.tricks[2] = herz;
 r = E.scoreGame(g); assert.strictEqual(r.bockAdded, 4);
+// Pflichtsoli: gezählt werden angesagte Soli, stille Hochzeit und Hochzeit ohne Partner
+{
+  let x = table();
+  assert.ok(E.apply(x, 0, { t: 'pflicht', n: 7 }).error);
+  x = run(x, { seat: 0, a: { t: 'pflicht', n: 2 } });
+  x = run(x, { seat: 0, a: { t: 'start' } });
+  assert.ok(E.apply(x, 0, { t: 'pflicht', n: 1 }).error, 'während der Partie nicht mehr änderbar');
+  assert.ok(E.apply(x, 0, { t: 'endPartie' }).error, 'nicht mitten im Spiel beenden');
+  x.games = [
+    { no: 1, label: 'Damensolo', solo: true, soloist: 1, soloSeat: 1, points: [8, 0, 8, 8] },
+    { no: 2, label: 'Stille Hochzeit', solo: true, soloist: 3, soloSeat: 3, points: [0, 0, 0, 36] },
+    { no: 3, label: 'Hochzeit (Solo)', solo: true, soloist: null, soloSeat: 0, points: [0, 8, 8, 8] },
+    { no: 4, label: 'Trumpfsolo', solo: true, soloist: 1, soloSeat: 1, points: [8, 0, 8, 8] },
+    { no: 5, label: 'Normalspiel', solo: false, soloist: null, points: [1, 0, 1, 0] },
+  ];
+  assert.deepStrictEqual(E.soloCounts(x), [1, 2, 0, 1]);
+  x.game.phase = 'done';
+  x = run(x, { seat: 0, a: { t: 'endPartie' } });
+  const pen = x.games[x.games.length - 1];
+  assert.ok(pen.pflicht); assert.deepStrictEqual(pen.points, [100, 0, 200, 100]);
+  assert.strictEqual(x.phase, 'ended'); assert.strictEqual(x.game, null);
+  assert.deepStrictEqual(E.totals(x), [117, 8, 225, 160]);
+  assert.ok(E.apply(x, 0, { t: 'next' }).error, 'nach dem Ende kein weiteres Spiel');
+  x = run(x, { seat: 0, a: { t: 'reset', keepSeats: true } });
+  assert.strictEqual(x.phase, 'lobby'); assert.strictEqual(x.pflichtSoli, null); assert.strictEqual(x.games.length, 0);
+  // Hochzeit ohne Partner wird beim Abrechnen dem Spieler mit der Hochzeit als Solo gutgeschrieben
+  let y = table(); y = run(y, { seat: 0, a: { t: 'start', hands } });
+  y = run(y, { seat: 0, a: { t: 'decl', choice: 'hochzeit' } }); for (const p of [1, 2, 3]) y = run(y, { seat: p, a: { t: 'decl', choice: 'gesund' } });
+  y = plays(y, [[0, 'SQ0'], [1, 'HT1'], [2, 'DQ1'], [3, 'DT1']]);
+  y = plays(y, [[1, 'HQ0'], [2, 'CJ1'], [3, 'DK1'], [0, 'DJ0']]);
+  y = plays(y, [[1, 'HQ1'], [2, 'SJ1'], [3, 'CT1'], [0, 'CQ0']]);
+  y = playOut(y);
+  assert.strictEqual(y.games[y.games.length - 1].soloSeat, 0); assert.deepStrictEqual(E.soloCounts(y), [1, 0, 0, 0]);
+  console.log('Pflichtsoli: ok');
+}
 console.log('Alle Tests bestanden.');

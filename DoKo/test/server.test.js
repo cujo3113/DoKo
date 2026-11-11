@@ -67,6 +67,9 @@ assert.deepStrictEqual(socks[2].last().view.seats.map((s) => s.mine), [false, fa
 // Fremden Platz kann man nicht räumen, man sitzt nicht doppelt
 await t.webSocketMessage(socks[1], JSON.stringify({ t: 'act', a: { t: 'leave', seat: 0 } }));
 assert.ok(socks[1].lastError());
+await t.webSocketMessage(socks[0], JSON.stringify({ t: 'act', a: { t: 'start' } }));
+assert.ok(socks[0].lastError(), 'ohne Pflichtsoli-Angabe kein Start');
+await t.webSocketMessage(socks[1], JSON.stringify({ t: 'act', a: { t: 'pflicht', n: 1 } }));
 await t.webSocketMessage(socks[0], JSON.stringify({ t: 'act', a: { t: 'start', hands: [['CQ0']] } }));
 assert.strictEqual(t.state.game.hands[0].length, 10, 'Client darf keine Karten vorgeben');
 
