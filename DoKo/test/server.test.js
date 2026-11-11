@@ -145,6 +145,46 @@ console.log('Partie mit Bot:', t.state.game.result.label, t.state.game.result.po
   assert.ok(t.state.log.some((l) => l === 'Neu spielt für Spieler 2 weiter.'));
   console.log('Platz übernommen: ok');
 }
+// 3c) Zuschauer sind sichtbar, Bot-Platz während des Spiels übernehmen, Tisch-Chat
+{
+  const zu = mockSocket(ctx); const ZU = 'ZUSCHAUER0000000000ZZ';
+  await t.webSocketMessage(zu, JSON.stringify({ t: 'hello', uid: ZU, name: 'Peter' }));
+  let pres = socks[0].last().view.present;
+  assert.ok(pres.some((p) => p.name === 'Peter' && p.seat === -1), 'Zuschauer steht in der Anwesenheitsliste');
+  assert.ok(pres.some((p) => p.name === 'Spieler 1' && p.seat === 0 && p.me), 'man erkennt sich selbst');
+  assert.ok(!JSON.stringify(pres).includes(ZU), 'keine Kennungen in der Anwesenheitsliste');
+  await t.webSocketMessage(zu, JSON.stringify({ t: 'nick', name: 'Peter K.' }));
+  assert.ok(socks[0].last().view.present.some((p) => p.name === 'Peter K.'), 'Namensänderung eines Zuschauers kommt an');
+  // Bot-Platz mitten im Spiel übernehmen
+  const botSeat = t.state.seats.findIndex((s) => s && s.bot);
+  assert.ok(botSeat >= 0 && t.state.phase === 'game');
+  const hand = t.state.game.hands[botSeat].slice();
+  await t.webSocketMessage(zu, JSON.stringify({ t: 'act', a: { t: 'takeover', seat: botSeat, name: 'Peter K.' } }));
+  assert.ok(!t.state.seats[botSeat].bot && t.state.seats[botSeat].name === 'Peter K.', 'Bot-Platz übernommen');
+  assert.deepStrictEqual(zu.last().view.game.hands[botSeat], hand);
+  assert.ok(socks[0].last().view.present.some((p) => p.name === 'Peter K.' && p.seat === botSeat));
+  // Chat
+  await t.webSocketMessage(zu, JSON.stringify({ t: 'chat', text: '  Hallo <b>Tisch</b>!  ' }));
+  const got = [...socks[0].inbox].reverse().find((m) => m.t === 'chat');
+  assert.strictEqual(got.add.text, 'Hallo <b>Tisch</b>!'); assert.strictEqual(got.add.name, 'Peter K.'); assert.strictEqual(got.add.mine, false);
+  assert.strictEqual([...zu.inbox].reverse().find((m) => m.t === 'chat').add.mine, true);
+  assert.ok(!JSON.stringify(got).includes(ZU), 'Chat verrät keine Kennung');
+  await t.webSocketMessage(zu, JSON.stringify({ t: 'chat', text: 'gleich nochmal' }));
+  assert.match(zu.lastError().message, /schnell/, 'Bremse gegen Spam');
+  await t.webSocketMessage(zu, JSON.stringify({ t: 'chat', text: 'x'.repeat(1000) }));
+  await t.webSocketMessage(zu, JSON.stringify({ t: 'chat', text: '   ' }));
+  assert.strictEqual(t.chat.length, 1);
+  // neuer Besucher bekommt den Verlauf
+  const spaet = mockSocket(ctx);
+  await t.webSocketMessage(spaet, JSON.stringify({ t: 'hello', uid: 'SPAETERGAST000000000X' }));
+  const hist = spaet.inbox.find((m) => m.t === 'chat');
+  assert.strictEqual(hist.list.length, 1); assert.strictEqual(hist.list[0].mine, false); assert.ok(!('uid' in hist.list[0]));
+  assert.ok(spaet.last().view.present.some((p) => p.name === 'Gast' && p.me));
+  // Verlauf übersteht den Neustart
+  const t3 = new Table(ctx, {}); await new Promise((r) => setTimeout(r, 0));
+  assert.strictEqual(t3.chat.length, 1);
+  console.log('Zuschauer, Bot-Platz und Chat: ok');
+}
 // 4) Spielstand übersteht den Neustart des Durable Objects
 const t2 = new Table(ctx, {}); await new Promise((r) => setTimeout(r, 0));
 assert.strictEqual(t2.state.games.length, 2);
