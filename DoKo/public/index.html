@@ -81,6 +81,7 @@ button:focus-visible, input:focus-visible, summary:focus-visible { outline: 3px 
 header.top { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 16px; }
 header.top h1 { font-family: var(--font-display); font-weight: 800; font-size: 1.9rem; margin: 0; letter-spacing: .01em; text-wrap: balance; }
 header.top .sub { color: var(--muted); font-size: .95rem; }
+@media (max-width: 1599px) { header.top .sub { display: none; } }
 .soundbtn { border: 1px solid var(--line); background: var(--panel); color: var(--ink); border-radius: 999px; padding: 4px 12px; font-size: .82rem; font-weight: 600; display: inline-flex; gap: 6px; align-items: center; }
 .soundbtn svg { width: 16px; height: 16px; }
 .soundbtn[aria-pressed="false"] { color: var(--muted); }
@@ -396,6 +397,50 @@ button, .card, .stat { touch-action: manipulation; }
 .chip.pfl.ok { background: #2e7d4f; color: #fff; }
 .zettel tr.pflichtrow td { background: rgba(192,57,43,.12); }
 .zettel tr.pflichtrow td.kind { color: #c0392b; font-weight: 700; }
+
+/* ===== Tisch-Stile (umschaltbar, Knopf „Tisch“ oben) ===== */
+/* A: Pokertisch – grüner Filz, gepolsterter Lederrand, goldene Linie */
+.felt.t-poker {
+  border: 22px solid transparent;
+  border-radius: clamp(36px, 8vw, 150px);
+  background:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 .5 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url%28%23n%29'/%3E%3C/svg%3E") padding-box,
+    radial-gradient(ellipse at 50% 42%, #2a8f61 0%, #1b6b45 42%, #0f4129 100%) padding-box,
+    radial-gradient(ellipse at 50% 0%, #5a3626 0%, #2b1810 55%, #140a06 100%) border-box;
+  box-shadow: 0 0 0 2px #0b0503, 0 22px 50px rgba(0,0,0,.45),
+    inset 0 0 0 2px rgba(0,0,0,.45), inset 0 14px 30px rgba(0,0,0,.55), inset 0 0 90px rgba(0,0,0,.4);
+}
+.felt.t-poker::before { content: ""; position: absolute; inset: 16px; border-radius: max(18px, calc(clamp(36px, 8vw, 150px) - 30px)); border: 2px solid rgba(238,201,120,.32); pointer-events: none; }
+/* B: Holztisch – Nussbaum-Dielen */
+.felt.t-wood {
+  border: 14px solid transparent;
+  border-radius: 20px;
+  background:
+    repeating-linear-gradient(0deg, transparent 0 156px, rgba(15,6,2,.6) 156px 158px, rgba(255,220,180,.07) 158px 159px) padding-box,
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='900' height='600'%3E%3Cfilter id='w'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.0035 0.11' numOctaves='3' seed='7' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.20  0 0 0 0 0.11  0 0 0 0 0.05  0 0 0 -1.6 1.15'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url%28%23w%29'/%3E%3C/svg%3E") padding-box,
+    linear-gradient(180deg, #6e4529 0%, #5b3820 50%, #4a2b17 100%) padding-box,
+    linear-gradient(135deg, #3b2112, #1d0f07) border-box;
+  box-shadow: 0 0 0 2px #120803, 0 18px 40px rgba(0,0,0,.45), inset 0 0 0 1px rgba(255,220,180,.15), inset 0 0 70px rgba(0,0,0,.5);
+}
+/* C: Spieltisch – grüner Filz mit Eichenholz-Rahmen */
+.felt.t-classic {
+  border: 18px solid transparent;
+  border-radius: 26px;
+  background:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 .5 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url%28%23n%29'/%3E%3C/svg%3E") padding-box,
+    radial-gradient(ellipse at 50% 42%, #23805a 0%, #18603f 50%, #0f4229 100%) padding-box,
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='700' height='500'%3E%3Cfilter id='w'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.004 0.13' numOctaves='3' seed='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.30  0 0 0 0 0.16  0 0 0 0 0.07  0 0 0 -1.5 1.05'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url%28%23w%29'/%3E%3C/svg%3E") border-box,
+    linear-gradient(135deg, #a4703f, #6e4421 55%, #8a5a2f) border-box;
+  box-shadow: 0 0 0 2px #2c170a, 0 16px 36px rgba(0,0,0,.4),
+    inset 0 0 0 2px rgba(0,0,0,.5), inset 0 8px 22px rgba(0,0,0,.55), inset 0 0 70px rgba(0,0,0,.35);
+}
+.felt.t-poker .seat, .felt.t-classic .seat, .felt.t-wood .seat { background: rgba(0,0,0,.28); }
+.felt.t-wood .seat, .felt.t-wood .mebar, .felt.t-wood .panel { background: rgba(20,9,3,.45); }
+@media (max-width: 520px) {
+  .felt.t-poker { border-width: 10px; border-radius: 28px; }
+  .felt.t-poker::before { inset: 8px; border-radius: 20px; }
+  .felt.t-classic, .felt.t-wood { border-width: 9px; }
+}
 </style>
 </head>
 <body>
@@ -403,7 +448,7 @@ button, .card, .stat { touch-action: manipulation; }
   <header class="top">
     <h1>Doko-Stammtisch</h1>
     <span class="sub">Doppelkopf ohne Neunen · 10 Karten · eure Hausregeln</span>
-    <span class="mode"><span id="mode"><span class="dot"></span> verbinde …</span><span class="tools"><span class="zoom" role="group" aria-label="Kartengröße"><button class="soundbtn" id="zoomout" aria-label="Karten kleiner" title="Karten kleiner">−</button><output id="zoomval">Karten 100 %</output><button class="soundbtn" id="zoomin" aria-label="Karten größer" title="Karten größer">+</button></span><button class="soundbtn" id="sidebtn" aria-pressed="true">Seitenleiste</button><button class="soundbtn" id="fsbtn" hidden>Vollbild</button><button class="soundbtn" id="voicebtn" aria-pressed="true"></button><button class="soundbtn" id="soundbtn" aria-pressed="true"></button></span></span>
+    <span class="mode"><span id="mode"><span class="dot"></span> verbinde …</span><span class="tools"><span class="zoom" role="group" aria-label="Kartengröße"><button class="soundbtn" id="zoomout" aria-label="Karten kleiner" title="Karten kleiner">−</button><output id="zoomval">Karten 100 %</output><button class="soundbtn" id="zoomin" aria-label="Karten größer" title="Karten größer">+</button></span><button class="soundbtn" id="tablebtn" title="Tisch wechseln"></button><button class="soundbtn" id="sidebtn" aria-pressed="true">Seitenleiste</button><button class="soundbtn" id="fsbtn" hidden>Vollbild</button><button class="soundbtn" id="voicebtn" aria-pressed="true"></button><button class="soundbtn" id="soundbtn" aria-pressed="true"></button></span></span>
   </header>
   <div class="layout">
     <section class="felt" id="felt" aria-label="Spieltisch"></section>
@@ -412,6 +457,6 @@ button, .card, .stat { touch-action: manipulation; }
 </div>
 <div class="toast" id="toast" hidden></div>
 <div class="annflash" id="annflash" hidden aria-live="assertive"></div>
-<script type="module" src="./app.js?v=22"></script>
+<script type="module" src="./app.js?v=23"></script>
 </body>
 </html>

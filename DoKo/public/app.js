@@ -1,6 +1,6 @@
 // Versionsnummer an den Dateinamen, damit Browser nie alte und neue Dateien mischen
-import E from './engine.js?v=22';
-import { CARD_DEFS, CARD_BODY } from './cards.js?v=22';
+import E from './engine.js?v=23';
+import { CARD_DEFS, CARD_BODY } from './cards.js?v=23';
 
   const $ = (id) => document.getElementById(id);
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -347,6 +347,25 @@ import { CARD_DEFS, CARD_BODY } from './cards.js?v=22';
   $('zoomout').addEventListener('click', () => { zoom -= 0.1; applyZoom(); });
   $('zoomin').addEventListener('click', () => { zoom += 0.1; applyZoom(); });
   applyZoom();
+
+  // ---------- Tisch-Stil (jeder Spieler für sich, merkt sich der Browser) ----------
+  const TABLES = [
+    { id: 't-poker', name: 'Pokertisch' },
+    { id: 't-wood', name: 'Holztisch' },
+    { id: 't-classic', name: 'Spieltisch' },
+    { id: '', name: 'Schlicht' },
+  ];
+  let tableIdx = Math.max(0, TABLES.findIndex(t => t.id === (store.get('doko-tisch') ?? 't-poker')));
+  function applyTable() {
+    const t = TABLES[tableIdx], felt = $('felt');
+    TABLES.forEach(x => x.id && felt.classList.remove(x.id));
+    if (t.id) felt.classList.add(t.id);
+    store.set('doko-tisch', t.id);
+    $('tablebtn').innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="6" width="18" height="12" rx="6"/></svg>${t.name}`;
+    $('tablebtn').title = `Tisch wechseln (jetzt: ${t.name})`;
+  }
+  $('tablebtn').addEventListener('click', () => { tableIdx = (tableIdx + 1) % TABLES.length; applyTable(); });
+  applyTable();
 
   // ---------- Seitenleiste und Vollbild ----------
   // Kopfzeilenhöhe messen, damit der Tisch genau den restlichen Bildschirm füllt
