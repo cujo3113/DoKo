@@ -246,6 +246,7 @@ aside { display: grid; gap: 14px; min-width: 0; }
 details.rules summary { cursor: pointer; font-family: var(--font-display); font-weight: 700; font-size: 1.1rem; }
 details.rules ul { margin: 8px 0 0; padding-left: 18px; display: grid; gap: 4px; font-size: .9rem; }
 .notice { font-size: .88rem; color: var(--muted); }
+.panel .small { font-size: .85rem; }
 .toast { position: fixed; left: 50%; bottom: calc(18px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); background: var(--ink); color: var(--bg); padding: 9px 16px; border-radius: 10px; font-weight: 600; box-shadow: 0 6px 20px rgba(0,0,0,.3); max-width: calc(100% - 32px); z-index: 20; }
 
 /* Grundlage (eigenständige Seite) */
@@ -393,6 +394,9 @@ button, .card, .stat { touch-action: manipulation; }
 .segbtn { border: 0; background: transparent; color: var(--felt-ink); font-weight: 800; padding: 6px 14px; min-width: 42px; }
 .segbtn + .segbtn { border-left: 1px solid rgba(255,255,255,.25); }
 .segbtn[aria-pressed="true"] { background: var(--brass); color: var(--brass-ink); }
+.confirm .seg { max-width: 100%; }
+.confirm .segbtn { padding: 6px 12px; white-space: nowrap; flex: 1 1 auto; }
+@media (max-width: 520px) { .confirm .seg { display: flex; flex-wrap: wrap; width: 100%; } .confirm .segbtn { padding: 6px 8px; font-size: .9rem; } .confirm .segbtn + .segbtn { border-left: 1px solid rgba(255,255,255,.25); } }
 .chip.pfl { background: rgba(255,255,255,.12); }
 .chip.pfl.ok { background: #2e7d4f; color: #fff; }
 .zettel tr.pflichtrow td { background: rgba(192,57,43,.12); }
@@ -498,6 +502,6 @@ button, .card, .stat { touch-action: manipulation; }
 </section>
 <div class="toast" id="toast" hidden></div>
 <div class="annflash" id="annflash" hidden aria-live="assertive"></div>
-<script type="module" src="./app.js?v=25"></script>
+<script type="module" src="./app.js?v=26"></script>
 </body>
 </html>

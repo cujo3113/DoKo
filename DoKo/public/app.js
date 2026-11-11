@@ -1,6 +1,6 @@
 // Versionsnummer an den Dateinamen, damit Browser nie alte und neue Dateien mischen
-import E from './engine.js?v=25';
-import { CARD_DEFS, CARD_BODY } from './cards.js?v=25';
+import E from './engine.js?v=26';
+import { CARD_DEFS, CARD_BODY } from './cards.js?v=26';
 
   const $ = (id) => document.getElementById(id);
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -32,6 +32,7 @@ import { CARD_DEFS, CARD_BODY } from './cards.js?v=25';
   let selected = [];
   let selKey = '';
   let pendingSolo = null;   // Solo gewählt, aber noch nicht bestätigt
+  let pendingLvl = 0;       // beim Solo gleich mit angesagte Absage (0 = keine, 1 = keine 90 … 4 = schwarz)
   let trickClearAt = 0;     // bis wann der fertige Stich noch liegen bleibt
   const TRICK_SHOW_MS = 2000;      // fertiger Stich bleibt 2 Sekunden liegen …
   const LAST_TRICK_SHOW_MS = 5000; // … der 10. Stich 5 Sekunden, erst dann kommt die Abrechnung
@@ -568,7 +569,7 @@ import { CARD_DEFS, CARD_BODY } from './cards.js?v=25';
     soundsFor(state);
     const g = state && state.game;
     const k = g ? `${g.no}-${g.phase}-${g.turn}` : 'none';
-    if (k !== selKey) { selected = []; selKey = k; pendingSolo = null; }
+    if (k !== selKey) { selected = []; selKey = k; pendingSolo = null; pendingLvl = 0; }
     render();
     scheduleBots();
     prevStateObj = state;
@@ -805,7 +806,18 @@ import { CARD_DEFS, CARD_BODY } from './cards.js?v=25';
       const txt = {
         hochzeit: ['Hochzeit ansagen?', 'Bist du sicher? Der erste fremde Fehlstich in den ersten drei Stichen bestimmt deinen Partner, sonst spielst du ein Solo. Sagst du stattdessen „Gesund“, spielst du eine stille Hochzeit.', 'Ja, Hochzeit ansagen'],
         armut: ['Trumpfabgabe machen?', 'Bist du sicher? Du gibst alle deine Trümpfe ab (aufgefüllt auf drei Karten). Nimmt keiner an, wird neu gegeben.', 'Ja, Trumpfabgabe'],
-      }[pendingSolo] || [`${label} spielen?`, 'Bist du sicher? Ein angesagtes Solo kann nicht zurückgenommen werden.', `Ja, ${label} spielen`];
+      }[pendingSolo];
+      if (!txt) {
+        // Solo: Absage gleich mit ansagen, das hebt den Rang gegenüber anderen Soli
+        const ABS = ['ohne Absage', 'keine 90', 'keine 60', 'keine 30', 'schwarz'];
+        const with_ = pendingLvl ? ` mit „${ABS[pendingLvl]}“` : '';
+        return `<div class="panel confirm"><h2>${esc(label)} spielen?</h2>
+          <p class="muted">Bist du sicher? Ein angesagtes Solo kann nicht zurückgenommen werden.</p>
+          <div class="pflicht"><strong>Gleich absagen?</strong>
+            <span class="seg" role="group" aria-label="Absage zum Solo">${ABS.map((t, i) => `<button class="segbtn" data-sololvl="${i}" aria-pressed="${pendingLvl === i}">${t}</button>`).join('')}</span></div>
+          <p class="muted small">Wollen mehrere ein Solo, gilt: Erst zählt die Absage, dann Trumpf vor Damen vor Buben vor Königen. Eine Absage hier zählt wie jede andere: Schaffst du sie nicht, ist das Solo verloren.</p>
+          <div class="btnrow"><button class="btn primary" data-decl="${pendingSolo}" data-sure="1">${esc(`Ja, ${label}${with_} spielen`)}</button><button class="btn" data-act="cancelsolo">Abbrechen</button></div></div>`;
+      }
       return `<div class="panel confirm"><h2>${esc(txt[0])}</h2>
         <p class="muted">${esc(txt[1])}</p>
         <div class="btnrow"><button class="btn primary" data-decl="${pendingSolo}" data-sure="1">${esc(txt[2])}</button><button class="btn" data-act="cancelsolo">Abbrechen</button></div></div>`;
@@ -1023,6 +1035,7 @@ import { CARD_DEFS, CARD_BODY } from './cards.js?v=25';
       <div class="box"><details class="rules"><summary>Hausregeln in dieser App</summary><ul>
         <li>40 Karten ohne Neunen, 10 pro Spieler. Trumpf: Herz 10, Damen, Buben, Karo Ass, 10, König. Bei zwei gleichen Karten sticht die erste.</li>
         <li>Soli: Trumpfsolo (Karo-Solo), Damensolo, Bubensolo, Königssolo. Ein Solo hat Vorrang vor Hochzeit und Trumpfabgabe, und es spielt wie immer der Spieler links vom Geber aus.</li>
+        <li>Mehrere Soli: Beim Vorbehalt kann man gleich „keine 90“ bis „schwarz“ absagen. Es spielt das höchste Gebot: zuerst zählt die Absage, dann Trumpf vor Damen vor Buben vor Königen. Ein Königssolo mit „keine 90“ schlägt also ein Trumpfsolo ohne Absage. Bei Gleichstand spielt, wer näher links vom Geber sitzt. Die anderen sehen bis zur Auflösung nur „Vorbehalt“.</li>
         <li>Vorsortieren: Während der Vorbehaltsabfrage kannst du deine Karten nach Normalspiel oder einem Solo sortieren lassen. Das ist keine Ansage, das Spiel sagst du danach wie gewohnt an.</li>
         <li>Schmeißen: Ist dein höchster Trumpf kleiner als der Karo-Bube (oder hast du gar keinen Trumpf) oder hast du mindestens 5 Könige, kannst du während der Vorbehaltsabfrage jederzeit schmeißen. Derselbe Geber gibt neu, das Spiel zählt nicht.</li>
         <li>Hochzeit: Der erste fremde Fehlstich (Fehlfarbe ausgespielt, ein anderer gewinnt) in den ersten drei Stichen macht dessen Gewinner zum Partner. Trumpfstiche zählen nicht. Klappt das nicht, spielt die Hochzeit ein Solo.</li>
@@ -1152,8 +1165,13 @@ import { CARD_DEFS, CARD_BODY } from './cards.js?v=25';
     if (d.pflicht !== undefined) return act({ t: 'pflicht', n: +d.pflicht });
     if (d.sort) { sortPref = { game: dealSig(), kind: d.sort }; return renderFelt(); }
     // Solo, Hochzeit und Trumpfabgabe erst nach Rückfrage ansagen
-    if (d.decl && (d.decl.startsWith('solo_') || d.decl === 'hochzeit' || d.decl === 'armut') && !d.sure) { pendingSolo = d.decl; return renderFelt(); }
-    if (d.decl) { pendingSolo = null; return act({ t: 'decl', choice: d.decl }); }
+    if (d.sololvl !== undefined) { pendingLvl = +d.sololvl; return renderFelt(); }
+    if (d.decl && (d.decl.startsWith('solo_') || d.decl === 'hochzeit' || d.decl === 'armut') && !d.sure) { pendingSolo = d.decl; pendingLvl = 0; return renderFelt(); }
+    if (d.decl) {
+      const level = d.decl.startsWith('solo_') ? pendingLvl : undefined;
+      pendingSolo = null; pendingLvl = 0;
+      return act(level ? { t: 'decl', choice: d.decl, level } : { t: 'decl', choice: d.decl });
+    }
     if (d.armut !== undefined) return act({ t: 'armutAnswer', accept: d.armut === '1' });
     if (d.ann) return act({ t: 'announce', level: +d.ann });
     if (d.card && g) {
@@ -1171,7 +1189,7 @@ import { CARD_DEFS, CARD_BODY } from './cards.js?v=25';
       case 'next': return act({ t: 'next' });
       case 'armutGive': return act({ t: 'armutGive', cards: selected.slice() });
       case 'armutReturn': return act({ t: 'armutReturn', cards: selected.slice() });
-      case 'cancelsolo': pendingSolo = null; return renderFelt();
+      case 'cancelsolo': pendingSolo = null; pendingLvl = 0; return renderFelt();
       case 'lasttrick': showLast = !showLast; return renderFelt();
       case 'pdf': return downloadPdf();
       case 'editname': { const e = $('nick2'); if (e) { e.focus(); e.select(); e.scrollIntoView({ block: 'center', behavior: 'smooth' }); } return; }
