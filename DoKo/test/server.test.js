@@ -70,6 +70,9 @@ assert.ok(socks[1].lastError());
 await t.webSocketMessage(socks[0], JSON.stringify({ t: 'act', a: { t: 'start' } }));
 assert.ok(socks[0].lastError(), 'ohne Pflichtsoli-Angabe kein Start');
 await t.webSocketMessage(socks[1], JSON.stringify({ t: 'act', a: { t: 'pflicht', n: 1 } }));
+await t.webSocketMessage(socks[0], JSON.stringify({ t: 'act', a: { t: 'start' } }));
+assert.match(socks[0].lastError().message, /Augen/, 'ohne Augen-Angabe kein Start');
+await t.webSocketMessage(socks[2], JSON.stringify({ t: 'act', a: { t: 'augen', on: true } }));
 await t.webSocketMessage(socks[0], JSON.stringify({ t: 'act', a: { t: 'start', hands: [['CQ0']] } }));
 assert.strictEqual(t.state.game.hands[0].length, 10, 'Client darf keine Karten vorgeben');
 

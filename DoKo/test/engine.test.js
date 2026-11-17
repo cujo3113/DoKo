@@ -18,6 +18,7 @@ function table() {
   let s = E.newTable();
   s = run(s, { seat: 0, a: { t: 'fillBots' } });
   s = run(s, { seat: 0, a: { t: 'pflicht', n: 0 } });
+  s = run(s, { seat: 0, a: { t: 'augen', on: true } });
   return s;
 }
 
@@ -196,6 +197,7 @@ console.log('Stille Hochzeit:', s.game.result.points);
   x = E.dispatch(x, U, { t: 'sit', seat: 0, name: 'Solist' }).state;
   x = E.dispatch(x, U, { t: 'fillBots' }).state;
   x = E.dispatch(x, U, { t: 'pflicht', n: 0 }).state;
+  x = E.dispatch(x, U, { t: 'augen', on: true }).state;
   x = E.apply(x, 0, { t: 'start', hands }).state;
   for (const p of [0, 1, 2, 3]) x = E.apply(x, p, { t: 'decl', choice: 'gesund' }).state;
   const seen = () => [E.viewFor(x, U), E.viewFor(x, 'niemand')].map((v) => [v.game.stille, v.game.soloist]);
@@ -387,6 +389,39 @@ g = mk([0, 2]); g.tricks = tricksFor([0, 2], 125, 115);
 g.tricks[9] = { cards: [{ seat: 0, card: 'DK0' }, { seat: 1, card: 'DA0' }, { seat: 2, card: 'DK1' }, { seat: 3, card: 'SK1' }], winner: 1, points: g.tricks[9].points };
 g.tricks[8] = { cards: [{ seat: 0, card: 'DA1' }, { seat: 1, card: 'SK0' }, { seat: 2, card: 'CK0' }, { seat: 3, card: 'CK1' }], winner: 1, points: g.tricks[8].points };
 r = E.scoreGame(g); assert.ok(r.nullspiel); assert.deepStrictEqual(r.bockEvents, ['Nullspiel']);
+// Augen-Anzeige: vor der Partie abfragen, zwischen Spielen umstellbar, bei „aus“ keine Stich-Augen im View
+{
+  let x = E.newTable();
+  const U = 'AUGENTEST000000000000';
+  x = E.dispatch(x, U, { t: 'sit', seat: 0, name: 'A' }).state;
+  x = run(x, { seat: 0, a: { t: 'fillBots' } });
+  x = run(x, { seat: 0, a: { t: 'pflicht', n: 0 } });
+  assert.strictEqual(E.viewFor(x, U).augen, null);
+  assert.match(E.apply(x, 0, { t: 'start' }).error, /Augen/, 'ohne Angabe kein Start');
+  assert.ok(E.apply(x, 0, { t: 'augen', on: 'ja' }).error);
+  assert.ok(E.dispatch(x, 'FREMDER0000000000000X', { t: 'augen', on: false }).error, 'nur Spieler am Tisch');
+  x = run(x, { seat: 0, a: { t: 'augen', on: false } });
+  x = run(x, { seat: 0, a: { t: 'start' } });
+  assert.ok(E.apply(x, 0, { t: 'augen', on: true }).error, 'nicht mitten im Spiel');
+  for (const p of [0, 1, 2, 3]) if (x.game.phase === 'vorbehalt') x = run(x, { seat: x.game.turn, a: { t: 'decl', choice: 'gesund' } });
+  while (x.game.phase === 'play' && x.game.tricks.length < 2) x = E.botStep(x) || run(x, { seat: x.game.turn, a: { t: 'play', card: E.legalCards(x.game.hands[x.game.turn], x.game.current, E.kindOf(x.game.type))[0] } });
+  let v = E.viewFor(x, U);
+  assert.strictEqual(v.augen, false); assert.ok(v.game.tricks.length >= 2 && v.game.tricks.every((t) => t.points === null), 'keine Augen im View');
+  assert.ok(x.game.tricks.every((t) => typeof t.points === 'number'), 'intern wird weiter gezählt');
+  x = playOut(x);
+  v = E.viewFor(x, U);
+  assert.ok(v.game.tricks.every((t) => typeof t.points === 'number'), 'nach dem Spiel sind die Augen sichtbar');
+  assert.strictEqual(v.game.result.eyes.re + v.game.result.eyes.contra, 240);
+  x = run(x, { seat: 0, a: { t: 'augen', on: true } });
+  assert.strictEqual(x.augen, true, 'zwischen zwei Spielen umstellbar');
+  x = run(x, { seat: 0, a: { t: 'reset', keepSeats: true } });
+  assert.strictEqual(x.augen, null, 'neue Partie fragt neu');
+  // alte Partie ohne Einstellung: Augen sichtbar
+  const old = run(table(), { seat: 0, a: { t: 'start' } }); delete old.augen;
+  assert.strictEqual(E.viewFor(old, U).augen, true);
+  console.log('Augen-Anzeige: ok');
+}
+
 // Herz-Stich in stiller Hochzeit zählt für Bock
 g = mk([3], { stille: true, soloist: 3 }); g.tricks = tricksFor([3], 130, 110, 4); g.tricks[2] = herz;
 r = E.scoreGame(g); assert.strictEqual(r.bockAdded, 4);
