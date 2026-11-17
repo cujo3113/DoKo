@@ -1,6 +1,6 @@
 // Versionsnummer an den Dateinamen, damit Browser nie alte und neue Dateien mischen
-import E from './engine.js?v=28';
-import { CARD_DEFS, CARD_BODY } from './cards.js?v=28';
+import E from './engine.js?v=29';
+import { CARD_DEFS, CARD_BODY } from './cards.js?v=29';
 
   const $ = (id) => document.getElementById(id);
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -705,10 +705,12 @@ import { CARD_DEFS, CARD_BODY } from './cards.js?v=28';
     const eyes = won.reduce((a, t) => a + t.p, 0);
     const total = E.totals(state)[s];
     const fmt = (v) => `${v} Pkt · ${E.euro(v)}`;
-    const list = won.length ? `<span class="tricks">${won.map((t) => `<span>Stich ${t.i}: ${t.p}</span>`).join('')}</span>` : '<span>Noch kein Stich.</span>';
-    return `<span class="stat" tabindex="0" aria-label="${esc(seatName(s))}: ${eyes} Augen in ${won.length} Stichen, Spielstand ${fmt(total)}"><b>${eyes}</b> Augen · ${won.length} ${won.length === 1 ? 'Stich' : 'Stiche'}`
+    const showEyes = state.augen !== false || g.phase === 'done';
+    const nSt = `${won.length} ${won.length === 1 ? 'Stich' : 'Stiche'}`;
+    const list = won.length ? `<span class="tricks">${won.map((t) => `<span>Stich ${t.i}${showEyes ? ': ' + t.p : ''}</span>`).join('')}</span>` : '<span>Noch kein Stich.</span>';
+    return `<span class="stat" tabindex="0" aria-label="${esc(seatName(s))}: ${showEyes ? `${eyes} Augen in ` : ''}${nSt}, Spielstand ${fmt(total)}">${showEyes ? `<b>${eyes}</b> Augen · ${nSt}` : `<b>${won.length}</b> ${won.length === 1 ? 'Stich' : 'Stiche'}`}`
       + `<span class="tip" role="tooltip"><strong>${esc(seatName(s))}</strong>`
-      + `<span class="row"><span>Augen in diesem Spiel</span><span>${eyes}</span></span>`
+      + (showEyes ? `<span class="row"><span>Augen in diesem Spiel</span><span>${eyes}</span></span>` : '<span class="row"><span>Augen</span><span>selbst mitzählen</span></span>')
       + `<span class="row"><span>Stiche</span><span>${won.length}</span></span>${list}`
       + `<span class="row"><span>Spielstand (${state.games.length} ${state.games.length === 1 ? 'Spiel' : 'Spiele'})</span><span>${fmt(total)}</span></span></span></span>`;
   }
@@ -806,7 +808,7 @@ import { CARD_DEFS, CARD_BODY } from './cards.js?v=28';
     if (!cards.length && lastT && Date.now() < trickClearAt) {
       // fertiger Stich bleibt kurz liegen, dann wird automatisch abgeräumt
       cards = lastT.cards; winner = lastT.winner;
-      caption = `Stich ${g.tricks.length} an ${esc(seatName(lastT.winner))} · ${lastT.points} Augen`;
+      caption = `Stich ${g.tricks.length} an ${esc(seatName(lastT.winner))}${typeof lastT.points === 'number' ? ` · ${lastT.points} Augen` : ''}`;
     } else if (!cards.length) {
       caption = g.turn === mySeat() ? 'Du spielst aus.' : `${esc(seatName(g.turn))} spielt aus.`;
     }
@@ -816,7 +818,7 @@ import { CARD_DEFS, CARD_BODY } from './cards.js?v=28';
       last = `<button class="mini lastbtn" data-act="lasttrick" aria-pressed="${showLast}">${showLast ? 'Schließen' : 'Letzter Stich'}</button>`;
       if (showLast) {
         last += `<div class="lastview" role="dialog" aria-label="Letzter Stich"><div class="row4">${lastT.cards.map((p) => `<figure class="${p.seat === lastT.winner ? 'win' : ''}">${cardHTML(p.card, { trump: E.isTrump(p.card, kind) })}<figcaption>${esc(seatName(p.seat))}</figcaption></figure>`).join('')}</div>
-          <p class="muted">Stich ${g.tricks.length} an <strong>${esc(seatName(lastT.winner))}</strong> · ${lastT.points} Augen</p></div>`;
+          <p class="muted">Stich ${g.tricks.length} an <strong>${esc(seatName(lastT.winner))}</strong>${typeof lastT.points === 'number' ? ` · ${lastT.points} Augen` : ''}</p></div>`;
       }
     }
     return `<div class="trick" aria-live="polite">${last}${slots}<div class="trick-caption">${caption}</div></div>`;
@@ -854,9 +856,12 @@ import { CARD_DEFS, CARD_BODY } from './cards.js?v=28';
       <div class="pflicht"><strong>Pflichtsoli pro Spieler</strong>
         <span class="seg" role="group" aria-label="Pflichtsoli pro Spieler">${[0, 1, 2, 3, 4].map((n) => `<button class="segbtn" data-pflicht="${n}" aria-pressed="${state.pflichtSoli === n}"${m < 0 ? ' disabled' : ''}>${n}</button>`).join('')}</span>
         <span class="muted">${state.pflichtSoli === null || state.pflichtSoli === undefined ? 'Bitte vor dem Start festlegen.' : 'Für jedes fehlende Solo gibt es am Ende der Partie 100 Punkte.'}</span></div>
+      <div class="pflicht"><strong>Augen anzeigen</strong>
+        <span class="seg" role="group" aria-label="Augen während des Spiels anzeigen">${[[true, 'An'], [false, 'Aus']].map(([v, t]) => `<button class="segbtn" data-augen="${v ? 1 : 0}" aria-pressed="${state.augen === v}"${m < 0 ? ' disabled' : ''}>${t}</button>`).join('')}</span>
+        <span class="muted">${typeof state.augen !== 'boolean' ? 'Bitte vor dem Start festlegen.' : state.augen ? 'Bei jedem Spieler stehen die Augen seiner Stiche.' : 'Nur die Zahl der Stiche ist zu sehen, jeder zählt selbst mit. Am Spielende stehen die Augen in der Abrechnung.'}</span></div>
       <div class="btnrow">
         <button class="btn" data-act="fillBots"${full || readOnly ? ' disabled' : ''}>Freie Plätze mit Bots füllen</button>
-        <button class="btn primary" data-act="start"${!full || readOnly || typeof state.pflichtSoli !== 'number' ? ' disabled' : ''}>Spiel starten</button>
+        <button class="btn primary" data-act="start"${!full || readOnly || typeof state.pflichtSoli !== 'number' || typeof state.augen !== 'boolean' ? ' disabled' : ''}>Spiel starten</button>
         ${online ? '<a class="btn" href="?ueben=1" target="_blank" rel="noopener">Allein gegen Bots üben</a>' : ''}
       </div>
     </div>`;
@@ -1076,6 +1081,7 @@ import { CARD_DEFS, CARD_BODY } from './cards.js?v=28';
       const upcoming = 0;
       info = `<dl class="kv"><dt>Spiel</dt><dd>${g.no}</dd><dt>Geber</dt><dd>${esc(seatName(g.dealer))}</dd><dt>Spielart</dt><dd>${esc(publicType(g, m))}</dd>
         <dt>Re-Seite</dt><dd>${esc(reA)}</dd><dt>Kontra-Seite</dt><dd>${esc(coA)}</dd><dt>Bock</dt><dd>${bockNow}${upcoming ? ` · noch ${upcoming} Bockspiel${upcoming === 1 ? '' : 'e'} danach` : ''}</dd>
+        <dt>Augen</dt><dd>${state.augen === false ? 'ausgeblendet, selbst mitzählen' : 'werden angezeigt'}${g.phase === 'done' && m >= 0 && !readOnly ? ` <button class="mini" data-augen="${state.augen === false ? 1 : 0}">${state.augen === false ? 'ab nächstem Spiel zeigen' : 'ab nächstem Spiel ausblenden'}</button>` : ''}</dd>
         ${state.pflichtSoli ? `<dt>Pflichtsoli</dt><dd>${state.pflichtSoli} pro Spieler · ${[0, 1, 2, 3].map((i) => `${esc(seatName(i))} ${Math.min(state.soloCounts[i], state.pflichtSoli)}`).join(', ')}</dd>` : ''}</dl>`;
     } else {
       const pending = state.bockLeft || 0;
@@ -1125,6 +1131,7 @@ import { CARD_DEFS, CARD_BODY } from './cards.js?v=28';
         <li>Sonderpunkte (nur ohne Solo, je 1 für die Partei): Doppelkopf (Stich mit mindestens 40 Augen), Herz-Stich durchgegangen, Karlchen gewinnt den letzten Stich, Karlchen gefangen, Fuchs gefangen, Fuchs gewinnt den letzten Stich, beide Kreuz-Damen in einem Stich (für Kontra). Sonderpunkte der Verlierer werden abgezogen. Haben die Verlierer mindestens so viele Sonderpunkte wie die Gewinner Punkte, ist es ein Nullspiel.</li>
         <li>Solo (auch stille Hochzeit und Hochzeit ohne Partner): gewonnen 8, jede weitere Zeile 4 (keine 90, keine 90 angesagt, keine 60 …). Verliert der Solist, kommt „gegen die Alten“ mit 4 dazu und alles zählt dreifach. Kontra angesagt verdoppelt, Re und Kontra vervierfacht, Re allein ändert nichts. Solo, Hochzeit und Trumpfabgabe müssen bestätigt werden.</li>
         <li>Pflichtsoli: Vor jeder Partie wird festgelegt, wie viele Soli jeder spielen muss (Damen-, Buben-, Königs-, Trumpfsolo, stille Hochzeit, Hochzeit ohne Partner). Beim Beenden der Partie gibt es für jedes fehlende Solo 100 Punkte.</li>
+        <li>Augen anzeigen: Vor jeder Partie wird festgelegt, ob während des Spiels die Augen der Stiche zu sehen sind oder jeder selbst mitzählt. Zwischen zwei Spielen lässt sich das in der Seitenleiste umstellen. In der Abrechnung nach jedem Spiel stehen die Augen immer.</li>
         <li>Bockrunde: entsteht automatisch. Jedes Nullspiel und jeder durchgegangene Herz-Stich (nicht im angesagten Solo, wohl aber bei stiller Hochzeit und Hochzeit ohne Partner) bringt 4 Bockspiele dazu. Ein Bockspiel verdoppelt alle Punkte. Ein Solo in der Bockrunde zählt doppelt, verbraucht aber kein Bockspiel.</li>
       </ul></details></div>
       <div class="box"><h3>Tisch</h3>
@@ -1241,6 +1248,7 @@ import { CARD_DEFS, CARD_BODY } from './cards.js?v=28';
     if (d.leave !== undefined) return act({ t: 'leave', seat: +d.leave });
     if (d.kick !== undefined) return act({ t: 'kick', seat: +d.kick });
     if (d.pflicht !== undefined) return act({ t: 'pflicht', n: +d.pflicht });
+    if (d.augen !== undefined) return act({ t: 'augen', on: d.augen === '1' });
     if (d.sort) { sortPref = { game: dealSig(), kind: d.sort }; return renderFelt(); }
     // Solo, Hochzeit und Trumpfabgabe erst nach Rückfrage ansagen
     if (d.decl && (d.decl.startsWith('solo_') || d.decl === 'hochzeit' || d.decl === 'armut') && !d.sure) { pendingSolo = d.decl; return renderFelt(); }
@@ -1303,6 +1311,7 @@ import { CARD_DEFS, CARD_BODY } from './cards.js?v=28';
     s = E.dispatch(s, me.id, { t: 'sit', seat: 0, name: nick() || 'Du' }).state;
     s = E.dispatch(s, me.id, { t: 'fillBots' }).state;
     s = E.dispatch(s, me.id, { t: 'pflicht', n: 0 }).state;
+    s = E.dispatch(s, me.id, { t: 'augen', on: true }).state;
     s = E.dispatch(s, me.id, { t: 'start' }).state;
     full = s; state = E.viewFor(full, me.id);
     renderMode(); onState();

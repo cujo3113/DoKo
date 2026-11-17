@@ -112,7 +112,7 @@ const DokoEngine = (() => {
   }
 
   function newTable() {
-    return { v: 1, seats: [null, null, null, null], dealer: 3, bock: [], bockLeft: 0, pflichtSoli: null, games: [], game: null, phase: 'lobby', log: [], rev: 0 };
+    return { v: 1, seats: [null, null, null, null], dealer: 3, bock: [], bockLeft: 0, pflichtSoli: null, augen: null, games: [], game: null, phase: 'lobby', log: [], rev: 0 };
   }
 
   function seatName(state, s) { return state.seats[s] ? state.seats[s].name : `Platz ${s + 1}`; }
@@ -473,6 +473,14 @@ const DokoEngine = (() => {
         log(state, `${seatName(state, seat)}: ${n === 0 ? 'keine Pflichtsoli' : n === 1 ? '1 Pflichtsolo' : `${n} Pflichtsoli`} pro Spieler.`);
         break;
       }
+      case 'augen': {
+        // Augen-Anzeige: vor der Partie festlegen, zwischen zwei Spielen umstellbar
+        if (state.phase === 'ended' || (g && g.phase !== 'done')) return err('Die Augen-Anzeige kann nur vor der Partie oder zwischen zwei Spielen umgestellt werden.');
+        if (typeof a.on !== 'boolean') return err('Ungültige Einstellung.');
+        state.augen = a.on;
+        log(state, `${seatName(state, seat)}: ${a.on ? 'Augen werden angezeigt.' : 'Augen werden nicht angezeigt, jeder zählt selbst mit.'}`);
+        break;
+      }
       case 'endPartie': {
         if (state.phase !== 'game') return err('Es läuft keine Partie.');
         // Ein angefangenes Spiel wird abgebrochen und nicht gewertet (auch nicht als Pflichtsolo).
@@ -492,6 +500,7 @@ const DokoEngine = (() => {
         if (state.phase !== 'lobby') return err('Das Spiel läuft schon.');
         if (state.seats.some((s) => !s)) return err('Es braucht vier Spieler.');
         if (typeof state.pflichtSoli !== 'number') return err('Bitte zuerst festlegen, wie viele Pflichtsoli jeder spielen muss.');
+        if (typeof state.augen !== 'boolean') return err('Bitte zuerst festlegen, ob die Augen angezeigt werden.');
         deal(state, a.hands);
         break;
       }
@@ -1006,6 +1015,8 @@ const DokoEngine = (() => {
       v: state.v, rev: state.rev, dealer: state.dealer, bockLeft: typeof state.bockLeft === 'number' ? state.bockLeft : (state.bock || []).filter((x) => x > 0).length, games: clone(state.games),
       phase: state.phase, log: state.log.slice(), me,
       pflichtSoli: typeof state.pflichtSoli === 'number' ? state.pflichtSoli : null, soloCounts: soloCounts(state),
+      // ältere Partien ohne Einstellung zeigen die Augen wie bisher
+      augen: typeof state.augen === 'boolean' ? state.augen : (state.phase === 'lobby' ? null : true),
       seats: state.seats.map((s, i) => (s ? { name: s.name, bot: !!s.bot, mine: i === me, online: s.bot || !onlineUids || onlineUids.includes(s.uid) } : null)),
       game: null,
     };
@@ -1019,7 +1030,8 @@ const DokoEngine = (() => {
     const stilleKnown = g.stille && (done || cqBySoloist === 2);
     const vg = {
       no: g.no, dealId: g.dealId, dealer: g.dealer, phase: g.phase, turn: g.turn, type: g.type, bock: g.bock,
-      tricks: clone(g.tricks), current: clone(g.current), ann: clone(g.ann), hz: g.hz ? clone(g.hz) : null,
+      // Augen-Anzeige aus: Stich-Augen erst nach dem Spiel mitschicken
+      tricks: state.augen === false && g.phase !== 'done' ? g.tricks.map((t) => ({ ...clone(t), points: null })) : clone(g.tricks), current: clone(g.current), ann: clone(g.ann), hz: g.hz ? clone(g.hz) : null,
       hands: g.hands.map((h, i) => (i === me ? h.slice() : h.map(() => 'XX'))),
       decl: g.decl.map((d, i) => (i === me || !d ? d : d === 'gesund' ? 'gesund' : 'vorbehalt')),
       known: [0, 1, 2, 3].map((t) => knownParty(g, viewer, t)),
@@ -1102,7 +1114,7 @@ const DokoEngine = (() => {
         if (onlineUids && onlineUids.includes(s.uid)) return { error: `${s.name} ist noch verbunden.` };
         return apply(state, a.seat, { t: 'leave', seat: a.seat });
       }
-      case 'fillBots': case 'start': case 'next': case 'bock': case 'reset': case 'pflicht': case 'endPartie':
+      case 'fillBots': case 'start': case 'next': case 'bock': case 'reset': case 'pflicht': case 'augen': case 'endPartie':
         if (mine < 0) return { error: 'Setz dich zuerst an den Tisch.' };
         break;
       default:
