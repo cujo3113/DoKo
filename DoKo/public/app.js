@@ -1,6 +1,6 @@
 // Versionsnummer an den Dateinamen, damit Browser nie alte und neue Dateien mischen
-import E from './engine.js?v=29';
-import { CARD_DEFS, CARD_BODY } from './cards.js?v=29';
+import E from './engine.js?v=30';
+import { CARD_DEFS, CARD_BODY } from './cards.js?v=30';
 
   const $ = (id) => document.getElementById(id);
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -871,6 +871,18 @@ import { CARD_DEFS, CARD_BODY } from './cards.js?v=29';
     const m = mySeat();
     const order = [1, 2, 3, 4].map((i) => (g.dealer + i) % 4);
     const status = order.map((s) => `<span class="chip">${esc(seatName(s))}: ${g.decl[s] ? (g.decl[s] === 'gesund' ? 'gesund' : 'Vorbehalt') : s === g.turn ? 'überlegt …' : '–'}</span>`).join(' ');
+    if (g.turn === m && pendingSolo === 'gesund') {
+      // Rückfrage bei „Gesund“ mit Hochzeit auf der Hand oder nach einem Solo sortierten Karten
+      const hz = g.declOptions.includes('hochzeit');
+      const sk = sortKind(), soloName = (SORTS.find(([k]) => k === sk) || [])[1];
+      const sorted = sk !== 'normal' ? `solo_${sk}` : null;
+      const why = [];
+      if (hz) why.push('Du hast beide Kreuz-Damen. Sagst du „Gesund“, spielst du heimlich eine stille Hochzeit: allein gegen die anderen drei, und das zählt als Solo.');
+      if (sorted) why.push(`Du hast deine Karten nach ${soloName} sortiert. Ein Solo musst du jetzt ansagen, später geht das nicht mehr.`);
+      return `<div class="panel confirm"><h2>${hz && !sorted ? 'Wirklich heimlich spielen?' : 'Wirklich gesund?'}</h2>
+        ${why.map((t) => `<p class="muted">${esc(t)}</p>`).join('')}
+        <div class="btnrow"><button class="btn primary" data-decl="gesund" data-sure="1">${hz ? 'Ja, gesund (heimlich spielen)' : 'Ja, ich bin gesund'}</button>${hz ? `<button class="btn" data-decl="hochzeit">Lieber Hochzeit ansagen</button>` : ''}${sorted ? `<button class="btn" data-decl="${sorted}">Lieber ${esc(soloName)} ansagen</button>` : ''}<button class="btn" data-act="cancelsolo">Abbrechen</button></div></div>`;
+    }
     if (g.turn === m && pendingSolo) {
       const label = E.DECL_LABEL[pendingSolo];
       const txt = {
@@ -1252,6 +1264,7 @@ import { CARD_DEFS, CARD_BODY } from './cards.js?v=29';
     if (d.sort) { sortPref = { game: dealSig(), kind: d.sort }; return renderFelt(); }
     // Solo, Hochzeit und Trumpfabgabe erst nach Rückfrage ansagen
     if (d.decl && (d.decl.startsWith('solo_') || d.decl === 'hochzeit' || d.decl === 'armut') && !d.sure) { pendingSolo = d.decl; return renderFelt(); }
+    if (d.decl === 'gesund' && !d.sure && state.game && (state.game.declOptions.includes('hochzeit') || sortKind() !== 'normal')) { pendingSolo = 'gesund'; return renderFelt(); }
     if (d.decl) { pendingSolo = null; return act({ t: 'decl', choice: d.decl }); }
     if (d.reiz !== undefined) return act({ t: 'reizen', level: +d.reiz });
     if (d.armut !== undefined) return act({ t: 'armutAnswer', accept: d.armut === '1' });
