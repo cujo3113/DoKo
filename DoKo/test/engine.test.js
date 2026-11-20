@@ -422,6 +422,46 @@ r = E.scoreGame(g); assert.ok(r.nullspiel); assert.deepStrictEqual(r.bockEvents,
   console.log('Augen-Anzeige: ok');
 }
 
+// Archiv der letzten Spielzettel
+{
+  const partie = (x, n) => {
+    for (let i = 0; i < n; i++) {
+      x = run(x, { seat: 0, a: i === 0 && x.phase === 'lobby' ? { t: 'start', hands } : { t: 'next' } });
+      for (let k = 0; k < 4 && x.game.phase === 'vorbehalt'; k++) x = run(x, { seat: x.game.turn, a: { t: 'decl', choice: 'gesund' } });
+      x = playOut(x);
+    }
+    return x;
+  };
+  let x = partie(table(), 2);
+  assert.ok(x.startedAt > 0);
+  x = run(x, { seat: 0, a: { t: 'endPartie' } });
+  assert.strictEqual(x.archive.length, 1);
+  const z = x.archive[0];
+  assert.strictEqual(z.games.length, 2); assert.deepStrictEqual(Object.keys(z.games[0]).sort(), ['bock', 'label', 'no', 'points']);
+  assert.deepStrictEqual(z.games.map((g) => g.points), x.games.map((g) => g.points));
+  assert.strictEqual(z.names.length, 4); assert.ok(z.ended >= z.started);
+  x = run(x, { seat: 0, a: { t: 'reset', keepSeats: true } });
+  assert.strictEqual(x.archive.length, 1, 'kein doppelter Eintrag nach „Neue Partie“');
+  assert.strictEqual(x.games.length, 0); assert.ok(!x.archived && !x.startedAt);
+  x = run(x, { seat: 0, a: { t: 'reset', keepSeats: true } });
+  assert.strictEqual(x.archive.length, 1, 'leere Partie kommt nicht ins Archiv');
+  // Partie ohne „Partie beenden“, direkt neu gestartet: landet trotzdem im Archiv
+  x = run(x, { seat: 0, a: { t: 'pflicht', n: 0 } }); x = run(x, { seat: 0, a: { t: 'augen', on: true } });
+  x = partie(x, 1);
+  x = run(x, { seat: 0, a: { t: 'reset', keepSeats: true } });
+  assert.strictEqual(x.archive.length, 2);
+  // nur die letzten fünf bleiben, die neueste steht hinten
+  for (let i = 0; i < 5; i++) {
+    x = run(x, { seat: 0, a: { t: 'pflicht', n: 0 } }); x = run(x, { seat: 0, a: { t: 'augen', on: true } });
+    x = partie(x, 1); x = run(x, { seat: 0, a: { t: 'endPartie' } }); x = run(x, { seat: 0, a: { t: 'reset', keepSeats: true } });
+  }
+  assert.strictEqual(x.archive.length, 5);
+  assert.ok(x.archive.every((e, i, A) => i === 0 || A[i - 1].ended <= e.ended));
+  assert.strictEqual(E.viewFor(x, null).archive.length, 5);
+  assert.ok(JSON.stringify(x.archive).length < 20000, 'Archiv bleibt klein');
+  console.log('Archiv: ok');
+}
+
 // Herz-Stich in stiller Hochzeit zählt für Bock
 g = mk([3], { stille: true, soloist: 3 }); g.tricks = tricksFor([3], 130, 110, 4); g.tricks[2] = herz;
 r = E.scoreGame(g); assert.strictEqual(r.bockAdded, 4);
