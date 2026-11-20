@@ -1,6 +1,6 @@
 // Versionsnummer an den Dateinamen, damit Browser nie alte und neue Dateien mischen
-import E from './engine.js?v=30';
-import { CARD_DEFS, CARD_BODY } from './cards.js?v=30';
+import E from './engine.js?v=32';
+import { CARD_DEFS, CARD_BODY } from './cards.js?v=32';
 
   const $ = (id) => document.getElementById(id);
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -878,7 +878,7 @@ import { CARD_DEFS, CARD_BODY } from './cards.js?v=30';
       const sorted = sk !== 'normal' ? `solo_${sk}` : null;
       const why = [];
       if (hz) why.push('Du hast beide Kreuz-Damen. Sagst du „Gesund“, spielst du heimlich eine stille Hochzeit: allein gegen die anderen drei, und das zählt als Solo.');
-      if (sorted) why.push(`Du hast deine Karten nach ${soloName} sortiert. Ein Solo musst du jetzt ansagen, später geht das nicht mehr.`);
+      if (sorted) why.push(`Du hast dir deine Karten als ${soloName} angesehen. Ein Solo musst du jetzt ansagen, später geht das nicht mehr.`);
       return `<div class="panel confirm"><h2>${hz && !sorted ? 'Wirklich heimlich spielen?' : 'Wirklich gesund?'}</h2>
         ${why.map((t) => `<p class="muted">${esc(t)}</p>`).join('')}
         <div class="btnrow"><button class="btn primary" data-decl="gesund" data-sure="1">${hz ? 'Ja, gesund (heimlich spielen)' : 'Ja, ich bin gesund'}</button>${hz ? `<button class="btn" data-decl="hochzeit">Lieber Hochzeit ansagen</button>` : ''}${sorted ? `<button class="btn" data-decl="${sorted}">Lieber ${esc(soloName)} ansagen</button>` : ''}<button class="btn" data-act="cancelsolo">Abbrechen</button></div></div>`;
@@ -888,7 +888,7 @@ import { CARD_DEFS, CARD_BODY } from './cards.js?v=30';
       const txt = {
         hochzeit: ['Hochzeit ansagen?', 'Bist du sicher? Der erste fremde Fehlstich in den ersten drei Stichen bestimmt deinen Partner, sonst spielst du ein Solo. Sagst du stattdessen „Gesund“, spielst du eine stille Hochzeit.', 'Ja, Hochzeit ansagen'],
         armut: ['Trumpfabgabe machen?', 'Bist du sicher? Du gibst alle deine Trümpfe ab (aufgefüllt auf drei Karten). Nimmt keiner an, wird neu gegeben.', 'Ja, Trumpfabgabe'],
-      }[pendingSolo] || [`${label} spielen?`, 'Bist du sicher? Ein angesagtes Solo kann nicht zurückgenommen werden. Wollen mehrere ein Solo, wird anschließend gereizt.', `Ja, ${label} spielen`];
+      }[pendingSolo] || [`${label} spielen?`, 'Deine Karten sind jetzt danach sortiert. Bist du sicher? Ein angesagtes Solo kann nicht zurückgenommen werden. Wollen mehrere ein Solo, wird anschließend gereizt. Mit „Abbrechen“ kannst du dir ein anderes Solo ansehen.', `Ja, ${label} spielen`];
       return `<div class="panel confirm"><h2>${esc(txt[0])}</h2>
         <p class="muted">${esc(txt[1])}</p>
         <div class="btnrow"><button class="btn primary" data-decl="${pendingSolo}" data-sure="1">${esc(txt[2])}</button><button class="btn" data-act="cancelsolo">Abbrechen</button></div></div>`;
@@ -896,17 +896,23 @@ import { CARD_DEFS, CARD_BODY } from './cards.js?v=30';
     if (g.turn === m) {
       const o = g.declOptions;
       const nT = E.countTrumps(g.hands[m]);
-      const b = (k, cls = '') => `<button class="btn ${cls}" data-decl="${k}">${E.DECL_LABEL[k]}</button>`;
+      const b = (k, cls = '') => `<button class="btn ${cls}" data-decl="${k}"${k.startsWith('solo_') && k !== 'solo_trumpf' ? ` aria-pressed="${sortKind() === E.kindOf(k)}"` : ''}>${E.DECL_LABEL[k]}</button>`;
+      const sk = sortKind();
       return `<div class="panel"><h2>Gesund oder Vorbehalt?</h2>
         <p class="muted">Du hast ${nT} Trümpfe${o.includes('hochzeit') ? ' und beide Kreuz-Damen. Sagst du gesund, spielst du eine stille Hochzeit' : ''}.</p>
         <div class="btnrow">${b('gesund', 'primary')}${o.includes('hochzeit') ? b('hochzeit') : ''}${o.includes('armut') ? b('armut') : ''}${o.includes('schmeissen') ? b('schmeissen', 'warn') : ''}</div>
-        <div class="btnrow"><span class="muted">Solo:</span>${b('solo_trumpf')}${b('solo_damen')}${b('solo_buben')}${b('solo_koenige')}</div>
-        <p class="muted">Mit „Sortieren“ unter dem Tisch kannst du deine Karten vorab nach einem Solo ordnen. Das sagt noch nichts an.</p>
+        <div class="btnrow"><span class="muted">Solo:</span>${b('solo_trumpf')}${b('solo_damen')}${b('solo_buben')}${b('solo_koenige')}${sk !== 'normal' ? '<button class="btn ghost" data-sort="normal">Normal sortieren</button>' : ''}</div>
+        <p class="muted">${sk !== 'normal' ? `Deine Karten sind nach ${esc((SORTS.find(([k]) => k === sk) || [])[1] || '')} sortiert.` : 'Ein Klick auf ein Solo ordnet deine Karten danach und fragt dann nach, ob du es spielen willst.'}</p>
         <div class="btnrow">${status}</div></div>`;
     }
     const why = m >= 0 ? E.schmeissReason(g.hands[m]) : null;
     const throwBtn = why ? `<div class="btnrow"><button class="btn warn" data-decl="schmeissen">Schmeißen</button><span class="muted">Möglich, weil ${esc(why)}.</span></div>` : '';
-    return `<div class="panel"><h2>Vorbehalte</h2><p class="muted">${esc(seatName(g.turn))} ist dran.</p>${throwBtn}<div class="btnrow">${status}</div></div>`;
+    // Während des Wartens: Solo-Knöpfe nur als Vorschau, sie sortieren die Karten und sagen nichts an
+    const sk = sortKind();
+    const preview = m >= 0 && !g.decl[m] && g.hands[m].length
+      ? `<div class="btnrow"><span class="muted">Solo ansehen:</span>${[['normal', 'Normal'], ['damen', 'Damensolo'], ['buben', 'Bubensolo'], ['koenige', 'Königssolo']].map(([k, l]) => `<button class="btn${k === 'normal' ? ' ghost' : ''}" data-sort="${k}" aria-pressed="${sk === k}"${k === 'normal' ? ' title="Normalspiel und Trumpfsolo sortieren gleich"' : ''}>${l}</button>`).join('')}</div>
+        <p class="muted small">Das sortiert nur deine Karten. Ansagen kannst du, sobald du dran bist.</p>` : '';
+    return `<div class="panel"><h2>Vorbehalte</h2><p class="muted">${esc(seatName(g.turn))} ist dran.</p>${preview}${throwBtn}<div class="btnrow">${status}</div></div>`;
   }
 
   // Mehrere Soli: Überbotene dürfen mit einer Absage erhöhen
@@ -1009,8 +1015,7 @@ import { CARD_DEFS, CARD_BODY } from './cards.js?v=30';
     const pchip = party ? `<span class="chip ${party}">${party === 're' ? 'Re' : 'Kontra'}</span>` : '';
     const mine = g ? annChips(g, m) + pflichtChip(m) : '';
     const geber = markers(g, m).join(' ');
-    const sorter = g && g.phase === 'vorbehalt' && g.hands[m].length
-      ? `<span class="sortbar" role="group" aria-label="Karten vorsortieren">Sortieren: ${SORTS.map(([k, l]) => `<button data-sort="${k}" aria-pressed="${sortKind() === k}">${l}</button>`).join('')}</span>` : '';
+    const sorter = ''; // Sortieren geschieht jetzt über die Solo-Knöpfe beim Vorbehalt
     const myStat = g && (g.phase === 'play' || g.phase === 'done') ? `<span class="seat-meta">${statHTML(m)}</span>` : '';
     return `<div class="mebar${turn ? ' turn' : ''}${annClass(g, m)}"><span class="seat-name">${esc(seatName(m))} <button class="mini" data-act="editname" aria-label="Namen ändern" title="Namen ändern">✎</button> ${geber} ${pchip} ${mine}</span>${myStat}<span class="hint">${hint}</span>${sorter}${ann ? `<span class="annrow" aria-label="Ansagen">${ann}</span>` : ''}</div>`;
   }
@@ -1263,7 +1268,11 @@ import { CARD_DEFS, CARD_BODY } from './cards.js?v=30';
     if (d.augen !== undefined) return act({ t: 'augen', on: d.augen === '1' });
     if (d.sort) { sortPref = { game: dealSig(), kind: d.sort }; return renderFelt(); }
     // Solo, Hochzeit und Trumpfabgabe erst nach Rückfrage ansagen
-    if (d.decl && (d.decl.startsWith('solo_') || d.decl === 'hochzeit' || d.decl === 'armut') && !d.sure) { pendingSolo = d.decl; return renderFelt(); }
+    if (d.decl && (d.decl.startsWith('solo_') || d.decl === 'hochzeit' || d.decl === 'armut') && !d.sure) {
+      // Ein Klick auf ein Solo ordnet die Karten gleich danach, angesagt wird erst nach der Rückfrage
+      if (d.decl.startsWith('solo_')) sortPref = { game: dealSig(), kind: E.kindOf(d.decl) };
+      pendingSolo = d.decl; return renderFelt();
+    }
     if (d.decl === 'gesund' && !d.sure && state.game && (state.game.declOptions.includes('hochzeit') || sortKind() !== 'normal')) { pendingSolo = 'gesund'; return renderFelt(); }
     if (d.decl) { pendingSolo = null; return act({ t: 'decl', choice: d.decl }); }
     if (d.reiz !== undefined) return act({ t: 'reizen', level: +d.reiz });
