@@ -1,6 +1,6 @@
 // Versionsnummer an den Dateinamen, damit Browser nie alte und neue Dateien mischen
-import E from './engine.js?v=32';
-import { CARD_DEFS, CARD_BODY } from './cards.js?v=32';
+import E from './engine.js?v=33';
+import { CARD_DEFS, CARD_BODY } from './cards.js?v=33';
 
   const $ = (id) => document.getElementById(id);
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -1083,6 +1083,23 @@ import { CARD_DEFS, CARD_BODY } from './cards.js?v=32';
     }
     renderSideNow();
   }
+  const sumPoints = (games) => games.reduce((t, x) => (x.points.forEach((p, i) => (t[i] += p)), t), [0, 0, 0, 0]);
+  const fmtWhen = (ts) => new Date(ts).toLocaleString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  const archOpen = new Set(); // aufgeklappte Archiv-Einträge bleiben beim Neuzeichnen offen
+  $('side').addEventListener('toggle', (e) => {
+    const d = e.target.closest && e.target.closest('details.arch'); if (!d) return;
+    if (d.open) archOpen.add(d.dataset.arch); else archOpen.delete(d.dataset.arch);
+  }, true);
+  function zettelTable(games, names) {
+    const run = [0, 0, 0, 0];
+    const rows = games.map((x) => {
+      x.points.forEach((p, i) => (run[i] += p));
+      return `<tr class="${x.bock ? 'bock' : ''}${x.pflicht ? ' pflichtrow' : ''}"><td class="kind">${x.pflicht ? '' : x.no + ' '}${esc(x.label)}</td>${run.map((v, i) => `<td>${v}<span class="d">${x.points[i] ? '+' + x.points[i] : '·'}</span></td>`).join('')}</tr>`;
+    }).join('');
+    return `<table><thead><tr><th>Spiel</th>${names.map((n) => `<th title="${esc(n)}">${esc(n)}</th>`).join('')}</tr></thead><tbody>${rows}</tbody>
+      <tfoot><tr><td class="kind">Zu zahlen</td>${run.map((v) => `<td class="eur">${E.euro(v)}</td>`).join('')}</tr></tfoot></table>`;
+  }
+
   function renderSideNow() {
     const side = $('side');
     if (!state) { side.innerHTML = ''; return; }
@@ -1104,15 +1121,19 @@ import { CARD_DEFS, CARD_BODY } from './cards.js?v=32';
       const pending = state.bockLeft || 0;
       info = `<p class="notice">Noch kein Spiel gestartet.${pending ? ` ${pending} Bockspiele stehen an.` : ''}</p>`;
     }
-    const run = [0, 0, 0, 0];
-    const rows = state.games.map((x) => {
-      x.points.forEach((p, i) => (run[i] += p));
-      return `<tr class="${x.bock ? 'bock' : ''}${x.pflicht ? ' pflichtrow' : ''}"><td class="kind">${x.pflicht ? '' : x.no + ' '}${esc(x.label)}</td>${run.map((v, i) => `<td>${v}<span class="d">${x.points[i] ? '+' + x.points[i] : '·'}</span></td>`).join('')}</tr>`;
-    }).join('');
     const zettel = state.games.length
-      ? `<table><thead><tr><th>Spiel</th>${names.map((n) => `<th title="${esc(n)}">${esc(n)}</th>`).join('')}</tr></thead><tbody>${rows}</tbody>
-         <tfoot><tr><td class="kind">Zu zahlen</td>${run.map((v) => `<td class="eur">${E.euro(v)}</td>`).join('')}</tr></tfoot></table>`
+      ? zettelTable(state.games, names)
       : '<div class="empty">Hier stehen nach jedem Spiel die Punkte der Verlierer, wie auf dem Doko-Block. Jeder Punkt kostet 5 Cent.</div>';
+    // Archiv: die letzten Spielzettel, neuester oben
+    const arch = (state.archive || []).slice().reverse();
+    const archBox = arch.length ? `<div class="box"><h3>Archiv <small>letzte ${arch.length === 1 ? 'Partie' : arch.length + ' Partien'}</small></h3>${arch.map((e) => {
+      const tot = sumPoints(e.games);
+      const n = e.games.filter((x) => !x.pflicht).length;
+      return `<details class="arch" data-arch="${esc(e.id)}"${archOpen.has(e.id) ? ' open' : ''}><summary><span>${esc(fmtWhen(e.ended))}</span><small>${n} ${n === 1 ? 'Spiel' : 'Spiele'}</small></summary>
+        <p class="archpay">${e.names.map((nm, i) => `<span>${esc(nm)} <b>${E.euro(tot[i])}</b></span>`).join('')}</p>
+        <div class="zettel">${zettelTable(e.games, e.names)}</div>
+        <div class="btnrow"><button class="sidebtn" data-archpdf="${esc(e.id)}">Als PDF</button></div></details>`;
+    }).join('')}</div>` : '';
     // Verlauf nur für das aktuelle bzw. letzte Spiel: ab dem Eintrag „Spiel N: … gibt.“
     let from = -1;
     for (let i = state.log.length - 1; i >= 0; i--) if (/^Spiel \d+: .+ gibt\.$/.test(state.log[i])) { from = i; break; }
@@ -1132,12 +1153,14 @@ import { CARD_DEFS, CARD_BODY } from './cards.js?v=32';
       <div class="box"><h3>Dieses Spiel</h3>${info}
         <div class="btnrow">${m >= 0 && state.phase === 'game' ? `<button class="sidebtn" data-leave="${m}">Platz an Bot abgeben</button>` : ''}</div></div>
       <div class="box"><h3>Spielzettel <small>${state.games.length ? state.games.length + (state.games.length === 1 ? ' Spiel' : ' Spiele') + ' · Verliererpunkte' : ''}</small></h3><div class="zettel" id="zettel">${zettel}</div>${state.games.length ? '<div class="btnrow"><button class="sidebtn" data-act="pdf">Spielzettel als PDF</button></div>' : ''}</div>
+      ${archBox}
       <div class="box"><h3>${logTitle}</h3><ul class="log">${logItems || '<li>Noch nichts passiert.</li>'}</ul></div>
       <div class="box"><details class="rules"><summary>Hausregeln in dieser App</summary><ul>
         <li>40 Karten ohne Neunen, 10 pro Spieler. Trumpf: Herz 10, Damen, Buben, Karo Ass, 10, König. Bei zwei gleichen Karten sticht die erste.</li>
         <li>Soli: Trumpfsolo (Karo-Solo), Damensolo, Bubensolo, Königssolo. Ein Solo hat Vorrang vor Hochzeit und Trumpfabgabe, und es spielt wie immer der Spieler links vom Geber aus.</li>
         <li>Mehrere Soli: Es gilt Trumpf vor Damen vor Buben vor Königen, bei gleichem Solo spielt, wer näher links vom Geber sitzt. Danach wird gereizt: Wer überboten ist, kann mit einer Absage (keine 90 bis schwarz) erhöhen oder passen. Eine höhere Absage schlägt jedes Solo mit niedrigerer Absage, ein Königssolo mit „keine 90“ also ein Trumpfsolo ohne Absage. Dann darf der andere nachziehen, bis nur einer übrig ist. Die Absage zählt wie jede andere. Welches Solo die anderen wollten, bleibt geheim.</li>
-        <li>Vorsortieren: Während der Vorbehaltsabfrage kannst du deine Karten nach Normalspiel oder einem Solo sortieren lassen. Das ist keine Ansage, das Spiel sagst du danach wie gewohnt an.</li>
+        <li>Vorsortieren: Bei der Vorbehaltsabfrage ordnet ein Klick auf ein Solo deine Karten danach. Solange du noch nicht dran bist, ist das nur eine Vorschau. Bist du dran, folgt die Rückfrage, ob du das Solo wirklich spielst.</li>
+        <li>Archiv: Die letzten fünf beendeten Partien stehen mit ihrem Spielzettel in der Seitenleiste unter „Archiv“, auch als PDF.</li>
         <li>Schmeißen: Ist dein höchster Trumpf kleiner als der Karo-Bube (oder hast du gar keinen Trumpf) oder hast du mindestens 5 Könige, kannst du während der Vorbehaltsabfrage jederzeit schmeißen. Derselbe Geber gibt neu, das Spiel zählt nicht.</li>
         <li>Hochzeit: Der erste fremde Fehlstich (Fehlfarbe ausgespielt, ein anderer gewinnt) in den ersten drei Stichen macht dessen Gewinner zum Partner. Trumpfstiche zählen nicht. Klappt das nicht, spielt die Hochzeit ein Solo.</li>
         <li>Stille Hochzeit: Beide Kreuz-Damen und „gesund“ gesagt. Wird wie ein Solo abgerechnet.</li>
@@ -1195,14 +1218,16 @@ import { CARD_DEFS, CARD_BODY } from './cards.js?v=32';
       document.head.appendChild(sc);
     });
   }
-  async function downloadPdf() {
-    if (!state || !state.games.length) { toast('Noch keine Spiele auf dem Zettel.'); return; }
+  // src: aktueller Spielzettel (Standard) oder ein Eintrag aus dem Archiv
+  async function downloadPdf(src) {
+    const games = src ? src.games : state && state.games;
+    if (!games || !games.length) { toast('Noch keine Spiele auf dem Zettel.'); return; }
     let jsPDF;
     try { ({ jsPDF } = await loadJsPdf()); } catch (e) { toast('Das PDF-Modul ließ sich nicht laden. Bitte Seite neu laden.'); return; }
     const doc = new jsPDF({ unit: 'mm', format: 'a4' });
-    const names = [0, 1, 2, 3].map(seatName);
-    const now = new Date();
-    const stamp = now.toLocaleString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+    const names = src ? src.names : [0, 1, 2, 3].map(seatName);
+    const now = src ? new Date(src.ended) : new Date();
+    const stamp = (src ? 'Partie vom ' : 'Stand ') + now.toLocaleString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
     const L = 14, R = 196, W = R - L;
     const col = { nr: L, spiel: L + 9, bock: L + 62, p0: L + 76 };
     const pw = (R - col.p0) / 4;
@@ -1213,7 +1238,7 @@ import { CARD_DEFS, CARD_BODY } from './cards.js?v=32';
       doc.setFont('helvetica', 'bold'); doc.setFontSize(18); doc.setTextColor(...green);
       doc.text('Doko-Stammtisch – Spielzettel', L, y); y += 7;
       doc.setFont('helvetica', 'normal'); doc.setFontSize(9.5); doc.setTextColor(...grey);
-      doc.text(`Tisch „${TABLE}“ · Stand ${stamp} · Punkte bekommen die Verlierer · 1 Punkt = ${E.RULES.centPerPoint} Cent`, L, y); y += 8;
+      doc.text(`Tisch „${TABLE}“ · ${stamp} · Punkte bekommen die Verlierer · 1 Punkt = ${E.RULES.centPerPoint} Cent`, L, y); y += 8;
       doc.setFillColor(...green); doc.rect(L, y - 5, W, 8, 'F');
       doc.setFont('helvetica', 'bold'); doc.setFontSize(9.5); doc.setTextColor(255, 255, 255);
       doc.text('Nr', col.nr + 1, y); doc.text('Spiel', col.spiel, y); doc.text('Bock', col.bock, y);
@@ -1222,12 +1247,12 @@ import { CARD_DEFS, CARD_BODY } from './cards.js?v=32';
     };
     header();
     const run = [0, 0, 0, 0];
-    state.games.forEach((x, k) => {
+    games.forEach((x, k) => {
       if (y > 272) { doc.addPage(); y = 18; header(); }
       x.points.forEach((p, i) => (run[i] += p));
       if (k % 2 === 0) { doc.setFillColor(242, 246, 243); doc.rect(L, y - 4.6, W, 7, 'F'); }
       doc.setFont('helvetica', 'normal'); doc.setFontSize(9.5); doc.setTextColor(40, 40, 40);
-      doc.text(String(x.no), col.nr + 1, y);
+      doc.text(x.pflicht ? '' : String(x.no), col.nr + 1, y);
       doc.text(doc.splitTextToSize(x.label || '', col.bock - col.spiel - 2)[0], col.spiel, y);
       if (x.bock) { doc.setTextColor(192, 57, 43); doc.text('×2', col.bock, y); }
       x.points.forEach((p, i) => {
@@ -1248,8 +1273,10 @@ import { CARD_DEFS, CARD_BODY } from './cards.js?v=32';
     run.forEach((v, i) => doc.text(E.euro(v).replace(/ /g, ' '), px(i), y, { align: 'right' })); y += 10;
     const total = run.reduce((a, b) => a + b, 0);
     doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(...grey);
-    doc.text(`${state.games.length} ${state.games.length === 1 ? "Spiel" : "Spiele"} · zusammen ${total} Punkte = ${E.euro(total).replace(/ /g, ' ')}`, L, y);
-    const file = `Spielzettel-${TABLE}-${now.toISOString().slice(0, 10)}.pdf`;
+    const nGames = games.filter((x) => !x.pflicht).length;
+    doc.text(`${nGames} ${nGames === 1 ? "Spiel" : "Spiele"} · zusammen ${total} Punkte = ${E.euro(total).replace(/ /g, ' ')}`, L, y);
+    const pad = (n) => String(n).padStart(2, '0');
+    const file = `Spielzettel-${TABLE}-${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}${src ? `-${pad(now.getHours())}${pad(now.getMinutes())}` : ''}.pdf`;
     doc.save(file);
     toast('PDF wird heruntergeladen.');
   }
@@ -1266,6 +1293,7 @@ import { CARD_DEFS, CARD_BODY } from './cards.js?v=32';
     if (d.kick !== undefined) return act({ t: 'kick', seat: +d.kick });
     if (d.pflicht !== undefined) return act({ t: 'pflicht', n: +d.pflicht });
     if (d.augen !== undefined) return act({ t: 'augen', on: d.augen === '1' });
+    if (d.archpdf) { const e = (state.archive || []).find((x) => x.id === d.archpdf); if (e) downloadPdf(e); return; }
     if (d.sort) { sortPref = { game: dealSig(), kind: d.sort }; return renderFelt(); }
     // Solo, Hochzeit und Trumpfabgabe erst nach Rückfrage ansagen
     if (d.decl && (d.decl.startsWith('solo_') || d.decl === 'hochzeit' || d.decl === 'armut') && !d.sure) {

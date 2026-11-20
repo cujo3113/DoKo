@@ -499,6 +499,19 @@ button, .card, .stat { touch-action: manipulation; }
 .chip.watch .ico, .watchline .ico { width: 15px; height: 15px; }
 .watchline { display: flex; align-items: center; gap: 6px; margin: 8px 0 0; }
 .present strong { color: var(--ink); }
+
+/* ===== Archiv der Spielzettel ===== */
+details.arch { border-top: 1px solid var(--line); padding: 8px 0; }
+details.arch:first-of-type { border-top: 0; padding-top: 2px; }
+details.arch summary { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; cursor: pointer; font-weight: 600; list-style: none; }
+details.arch summary::-webkit-details-marker { display: none; }
+details.arch summary::before { content: "▸"; color: var(--muted); margin-right: 2px; }
+details.arch[open] summary::before { content: "▾"; }
+details.arch summary span { margin-right: auto; }
+details.arch summary small { color: var(--muted); font-weight: 500; }
+.archpay { display: flex; flex-wrap: wrap; gap: 4px 12px; margin: 8px 0; font-size: .88rem; color: var(--muted); }
+.archpay b { color: var(--ink); }
+details.arch .zettel { margin-top: 4px; }
 </style>
 </head>
 <body>
@@ -523,6 +536,6 @@ button, .card, .stat { touch-action: manipulation; }
 </section>
 <div class="toast" id="toast" hidden></div>
 <div class="annflash" id="annflash" hidden aria-live="assertive"></div>
-<script type="module" src="./app.js?v=32"></script>
+<script type="module" src="./app.js?v=33"></script>
 </body>
 </html>

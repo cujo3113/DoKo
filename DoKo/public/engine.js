@@ -7,6 +7,7 @@ const DokoEngine = (() => {
     fuchs: true,             // Fuchs gefangen gibt einen Sonderpunkt
     centPerPoint: 5,         // Jeder Punkt kostet die Verlierer 5 Cent
     pflichtPenalty: 100,     // Strafpunkte je nicht gespieltem Pflichtsolo
+    archiveKeep: 5,          // so viele beendete Spielzettel bleiben im Archiv
     bots: { solo: true, announce: true, think: true, rollouts: 260, soloRate: 0.85, soloSims: 80, stille: true }, // Bot-Verhalten
     hochzeitTricks: 3,       // Klärungsstiche bei der Hochzeit
     armutMaxTrumps: 3,       // Trumpfabgabe bei höchstens so vielen Trümpfen
@@ -112,7 +113,23 @@ const DokoEngine = (() => {
   }
 
   function newTable() {
-    return { v: 1, seats: [null, null, null, null], dealer: 3, bock: [], bockLeft: 0, pflichtSoli: null, augen: null, games: [], game: null, phase: 'lobby', log: [], rev: 0 };
+    return { v: 1, seats: [null, null, null, null], dealer: 3, bock: [], bockLeft: 0, pflichtSoli: null, augen: null, games: [], game: null, phase: 'lobby', log: [], rev: 0, archive: [] };
+  }
+
+  // Beendeten Spielzettel ins Archiv legen (nur einmal pro Partie, nur mit Spielen)
+  function archivePartie(state) {
+    if (state.archived || !state.games.length) return;
+    const entry = {
+      id: Date.now().toString(36) + Math.random().toString(36).slice(2, 5),
+      started: state.startedAt || null, ended: Date.now(),
+      names: state.seats.map((x, i) => (x ? x.name : `Platz ${i + 1}`)),
+      // nur was der Spielzettel braucht, damit der Speicher des Tisches klein bleibt
+      games: state.games.map((x) => ({ no: x.no, label: x.label, points: x.points.slice(), bock: x.bock || 0, ...(x.pflicht ? { pflicht: true } : {}) })),
+      pflichtSoli: state.pflichtSoli ?? null,
+      centPerPoint: RULES.centPerPoint,
+    };
+    state.archive = [...(state.archive || []), entry].slice(-RULES.archiveKeep);
+    state.archived = true;
   }
 
   function seatName(state, s) { return state.seats[s] ? state.seats[s].name : `Platz ${s + 1}`; }
@@ -493,6 +510,7 @@ const DokoEngine = (() => {
         }
         state.phase = 'ended';
         state.game = null;
+        archivePartie(state);
         log(state, `Partie beendet.${missing.some((x) => x > 0) ? ' Fehlende Pflichtsoli: ' + missing.map((x, i) => (x ? `${seatName(state, i)} ${x}` : null)).filter(Boolean).join(', ') + '.' : ''}`);
         break;
       }
@@ -501,6 +519,7 @@ const DokoEngine = (() => {
         if (state.seats.some((s) => !s)) return err('Es braucht vier Spieler.');
         if (typeof state.pflichtSoli !== 'number') return err('Bitte zuerst festlegen, wie viele Pflichtsoli jeder spielen muss.');
         if (typeof state.augen !== 'boolean') return err('Bitte zuerst festlegen, ob die Augen angezeigt werden.');
+        if (!state.startedAt) state.startedAt = Date.now();
         deal(state, a.hands);
         break;
       }
@@ -614,9 +633,12 @@ const DokoEngine = (() => {
       }
       case 'reset': {
         const seats = state.seats;
+        archivePartie(state); // auch eine nicht ordentlich beendete Partie landet im Archiv
         const fresh = newTable();
+        fresh.archive = state.archive || [];
         fresh.seats = a.keepSeats ? seats.map((s) => (s && s.bot && s.uid === null && /\(Bot\)$/.test(s.name) ? null : s)) : [null, null, null, null];
         fresh.rev = state.rev;
+        delete state.archived; delete state.startedAt; // gehören zur alten Partie
         Object.assign(state, fresh);
         log(state, 'Neue Partie.');
         break;
@@ -1015,6 +1037,7 @@ const DokoEngine = (() => {
       v: state.v, rev: state.rev, dealer: state.dealer, bockLeft: typeof state.bockLeft === 'number' ? state.bockLeft : (state.bock || []).filter((x) => x > 0).length, games: clone(state.games),
       phase: state.phase, log: state.log.slice(), me,
       pflichtSoli: typeof state.pflichtSoli === 'number' ? state.pflichtSoli : null, soloCounts: soloCounts(state),
+      archive: clone(state.archive || []),
       // ältere Partien ohne Einstellung zeigen die Augen wie bisher
       augen: typeof state.augen === 'boolean' ? state.augen : (state.phase === 'lobby' ? null : true),
       seats: state.seats.map((s, i) => (s ? { name: s.name, bot: !!s.bot, mine: i === me, online: s.bot || !onlineUids || onlineUids.includes(s.uid) } : null)),
