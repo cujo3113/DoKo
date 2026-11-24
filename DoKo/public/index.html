@@ -252,6 +252,29 @@ details.rules ul { margin: 8px 0 0; padding-left: 18px; display: grid; gap: 4px;
 .reizlog { list-style: none; padding: 0; margin: 10px 0 0; display: grid; gap: 2px; font-size: .9rem; color: var(--felt-muted); }
 .toast { position: fixed; left: 50%; bottom: calc(18px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); background: var(--ink); color: var(--bg); padding: 9px 16px; border-radius: 10px; font-weight: 600; box-shadow: 0 6px 20px rgba(0,0,0,.3); max-width: calc(100% - 32px); z-index: 20; }
 
+/* Ratgeber */
+.adv { border-top: 1px solid rgba(255,255,255,.16); padding-top: 10px; display: grid; gap: 6px; min-width: 0; }
+.adv.off { border-top: 0; padding-top: 0; }
+.adv-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+.adv-head .mini { margin-left: auto; }
+.panel p.adv-score { margin-top: -4px; }
+.adv-label { font-size: .72rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--brass); }
+.adv-score { font-size: .85rem; font-weight: 600; color: var(--felt-ink); font-variant-numeric: tabular-nums; }
+.panel p.adv-rec { font-family: var(--font-display); font-weight: 700; font-size: 1.15rem; }
+.adv-rec.solo, .adv-rec.schmeissen { color: var(--brass); }
+.adv-notes { margin: 0; padding-left: 18px; display: grid; gap: 2px; font-size: .88rem; color: var(--felt-muted); }
+.adv-more summary { cursor: pointer; font-size: .88rem; font-weight: 600; color: var(--felt-ink); }
+.panel .adv-more > * + * { margin-top: 8px; }
+.adv-scroll { overflow-x: auto; }
+.adv-table { width: 100%; border-collapse: collapse; font-size: .85rem; font-variant-numeric: tabular-nums; }
+.adv-table th { text-align: left; font-weight: 600; color: var(--felt-muted); font-size: .75rem; padding: 3px 6px; border-bottom: 1px solid rgba(255,255,255,.18); white-space: nowrap; }
+.adv-table td { padding: 4px 6px; border-bottom: 1px solid rgba(255,255,255,.08); white-space: nowrap; }
+.adv-table tr.hi td { background: rgba(255,255,255,.1); font-weight: 700; }
+.panel p.adv-factors { display: flex; flex-wrap: wrap; gap: 4px; }
+.adv-f { font-size: .78rem; padding: 1px 8px; border-radius: 999px; background: rgba(255,255,255,.1); color: var(--felt-ink); }
+.adv-f.p { box-shadow: inset 0 0 0 1px rgba(255,255,255,.35); }
+.adv-f.m { box-shadow: inset 0 0 0 1px var(--brass); }
+
 /* Grundlage (eigenständige Seite) */
 html { -webkit-text-size-adjust: 100%; }
 :root { padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px); }
@@ -536,6 +559,6 @@ details.arch .zettel { margin-top: 4px; }
 </section>
 <div class="toast" id="toast" hidden></div>
 <div class="annflash" id="annflash" hidden aria-live="assertive"></div>
-<script type="module" src="./app.js?v=33"></script>
+<script type="module" src="./app.js?v=34"></script>
 </body>
 </html>
