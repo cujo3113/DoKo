@@ -252,29 +252,6 @@ details.rules ul { margin: 8px 0 0; padding-left: 18px; display: grid; gap: 4px;
 .reizlog { list-style: none; padding: 0; margin: 10px 0 0; display: grid; gap: 2px; font-size: .9rem; color: var(--felt-muted); }
 .toast { position: fixed; left: 50%; bottom: calc(18px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); background: var(--ink); color: var(--bg); padding: 9px 16px; border-radius: 10px; font-weight: 600; box-shadow: 0 6px 20px rgba(0,0,0,.3); max-width: calc(100% - 32px); z-index: 20; }
 
-/* Ratgeber */
-.adv { border-top: 1px solid rgba(255,255,255,.16); padding-top: 10px; display: grid; gap: 6px; min-width: 0; }
-.adv.off { border-top: 0; padding-top: 0; }
-.adv-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
-.adv-head .mini { margin-left: auto; }
-.panel p.adv-score { margin-top: -4px; }
-.adv-label { font-size: .72rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--brass); }
-.adv-score { font-size: .85rem; font-weight: 600; color: var(--felt-ink); font-variant-numeric: tabular-nums; }
-.panel p.adv-rec { font-family: var(--font-display); font-weight: 700; font-size: 1.15rem; }
-.adv-rec.solo, .adv-rec.schmeissen { color: var(--brass); }
-.adv-notes { margin: 0; padding-left: 18px; display: grid; gap: 2px; font-size: .88rem; color: var(--felt-muted); }
-.adv-more summary { cursor: pointer; font-size: .88rem; font-weight: 600; color: var(--felt-ink); }
-.panel .adv-more > * + * { margin-top: 8px; }
-.adv-scroll { overflow-x: auto; }
-.adv-table { width: 100%; border-collapse: collapse; font-size: .85rem; font-variant-numeric: tabular-nums; }
-.adv-table th { text-align: left; font-weight: 600; color: var(--felt-muted); font-size: .75rem; padding: 3px 6px; border-bottom: 1px solid rgba(255,255,255,.18); white-space: nowrap; }
-.adv-table td { padding: 4px 6px; border-bottom: 1px solid rgba(255,255,255,.08); white-space: nowrap; }
-.adv-table tr.hi td { background: rgba(255,255,255,.1); font-weight: 700; }
-.panel p.adv-factors { display: flex; flex-wrap: wrap; gap: 4px; }
-.adv-f { font-size: .78rem; padding: 1px 8px; border-radius: 999px; background: rgba(255,255,255,.1); color: var(--felt-ink); }
-.adv-f.p { box-shadow: inset 0 0 0 1px rgba(255,255,255,.35); }
-.adv-f.m { box-shadow: inset 0 0 0 1px var(--brass); }
-
 /* Grundlage (eigenständige Seite) */
 html { -webkit-text-size-adjust: 100%; }
 :root { padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px); }
@@ -535,6 +512,26 @@ details.arch summary small { color: var(--muted); font-weight: 500; }
 .archpay { display: flex; flex-wrap: wrap; gap: 4px 12px; margin: 8px 0; font-size: .88rem; color: var(--muted); }
 .archpay b { color: var(--ink); }
 details.arch .zettel { margin-top: 4px; }
+
+/* ===== Ratgeber ===== */
+#advbtn[aria-pressed="true"] { box-shadow: inset 0 0 0 2px var(--brass); }
+.advline { margin: 6px 0 10px; padding: 8px 10px; border-radius: 10px; background: rgba(255,255,255,.08); border-left: 3px solid var(--brass); font-size: .92rem; }
+.box.adv { border: 1px solid color-mix(in srgb, var(--brass) 55%, transparent); }
+.advscore { display: flex; align-items: center; gap: 12px; margin: 4px 0 8px; }
+.advscore .note { font-family: var(--font-display); font-size: 2.1rem; line-height: 1; color: var(--felt); min-width: 2.6ch; }
+.advscore .note small { font-size: .9rem; color: var(--muted); }
+.advfacts { margin: 0 0 8px; font-size: .88rem; color: var(--muted); }
+.advsolo { width: 100%; border-collapse: collapse; font-size: .9rem; }
+.advsolo caption { text-align: left; font-weight: 700; padding-bottom: 4px; }
+.advsolo td { padding: 3px 0; }
+.advsolo td:first-child { width: 42%; }
+.advsolo td.num { text-align: right; width: 3.6em; font-variant-numeric: tabular-nums; font-weight: 600; }
+.advbar { display: block; height: 8px; border-radius: 4px; background: rgba(127,127,127,.18); overflow: hidden; margin: 0 8px; }
+.advbar span { display: block; height: 100%; background: var(--muted); }
+.advsolo tr.good .advbar span { background: #2e8b57; } .advsolo tr.good td.num { color: #2e8b57; }
+.advsolo tr.mid .advbar span { background: #d08a1c; } .advsolo tr.mid td.num { color: #b4740f; }
+.advverdict { margin: 10px 0 6px; font-weight: 600; }
+.box.adv .small { font-size: .8rem; line-height: 1.4; margin: 4px 0 0; }
 </style>
 </head>
 <body>
@@ -542,7 +539,7 @@ details.arch .zettel { margin-top: 4px; }
   <header class="top">
     <h1>Doko-Stammtisch</h1>
     <span class="sub">Doppelkopf ohne Neunen · 10 Karten · eure Hausregeln</span>
-    <span class="mode"><span id="mode"><span class="dot"></span> verbinde …</span><span class="tools"><span class="zoom" role="group" aria-label="Kartengröße"><button class="soundbtn" id="zoomout" aria-label="Karten kleiner" title="Karten kleiner">−</button><output id="zoomval">Karten 100 %</output><button class="soundbtn" id="zoomin" aria-label="Karten größer" title="Karten größer">+</button></span><button class="soundbtn" id="chatbtn" aria-controls="chat" hidden></button><button class="soundbtn" id="tablebtn" title="Tisch wechseln"></button><button class="soundbtn" id="sidebtn" aria-pressed="true">Seitenleiste</button><button class="soundbtn" id="fsbtn" hidden>Vollbild</button><button class="soundbtn" id="voicebtn" aria-pressed="true"></button><button class="soundbtn" id="soundbtn" aria-pressed="true"></button></span></span>
+    <span class="mode"><span id="mode"><span class="dot"></span> verbinde …</span><span class="tools"><span class="zoom" role="group" aria-label="Kartengröße"><button class="soundbtn" id="zoomout" aria-label="Karten kleiner" title="Karten kleiner">−</button><output id="zoomval">Karten 100 %</output><button class="soundbtn" id="zoomin" aria-label="Karten größer" title="Karten größer">+</button></span><button class="soundbtn" id="advbtn" aria-pressed="false"></button><button class="soundbtn" id="chatbtn" aria-controls="chat" hidden></button><button class="soundbtn" id="tablebtn" title="Tisch wechseln"></button><button class="soundbtn" id="sidebtn" aria-pressed="true">Seitenleiste</button><button class="soundbtn" id="fsbtn" hidden>Vollbild</button><button class="soundbtn" id="voicebtn" aria-pressed="true"></button><button class="soundbtn" id="soundbtn" aria-pressed="true"></button></span></span>
   </header>
   <div class="layout">
     <section class="felt" id="felt" aria-label="Spieltisch"></section>
@@ -559,6 +556,6 @@ details.arch .zettel { margin-top: 4px; }
 </section>
 <div class="toast" id="toast" hidden></div>
 <div class="annflash" id="annflash" hidden aria-live="assertive"></div>
-<script type="module" src="./app.js?v=34"></script>
+<script type="module" src="./app.js?v=35"></script>
 </body>
 </html>

@@ -236,15 +236,16 @@ const DokoEngine = (() => {
       nextReizen(state);
     } else if (solos.length === 1) {
       startSolo(state, solos[0], 0);
+    } else if (ar !== undefined) {
+      // Hausregel: Trumpfabgabe hat Vorrang vor der Hochzeit
+      g.type = 'armut'; g.phase = 'armut_give'; g.turn = ar;
+      g.armut = { poor: ar, cards: null, declined: [], taker: null, returnedTrumps: null };
+      log(state, `${seatName(state, ar)} macht eine Trumpfabgabe.${hz !== undefined ? ' Sie geht vor der Hochzeit.' : ''}`);
     } else if (hz !== undefined) {
       g.type = 'hochzeit'; g.re = [hz];
       g.hz = { bride: hz, partner: null, clar: 0, done: false, alone: false };
       log(state, `${seatName(state, hz)} hat eine Hochzeit. Der erste fremde Fehlstich entscheidet.`);
       startPlay(state);
-    } else if (ar !== undefined) {
-      g.type = 'armut'; g.phase = 'armut_give'; g.turn = ar;
-      g.armut = { poor: ar, cards: null, declined: [], taker: null, returnedTrumps: null };
-      log(state, `${seatName(state, ar)} macht eine Trumpfabgabe.`);
     } else {
       g.type = 'normal';
       g.re = [0, 1, 2, 3].filter((s) => countCQ(g.hands[s]) > 0);
@@ -685,6 +686,69 @@ const DokoEngine = (() => {
       if (eyes >= need) wins++;
     }
     return wins / n;
+  }
+
+  // ---------- Ratgeber (läuft nur im Browser des Spielers, nur mit der eigenen Hand) ----------
+  // Probespiele mit zufällig verteilten übrigen Karten. Alle spielen nach derselben einfachen Strategie wie die Bots
+  // beim Vorausrechnen, die Zahlen sind also grobe Richtwerte.
+  function simulateHand(hand, seat, kind, lead, n, seed, isRe, need) {
+    const rest = ALL_KEYS.slice();
+    hand.forEach((c) => { const i = rest.indexOf(key(c)); if (i >= 0) rest.splice(i, 1); });
+    const rand = rng(seed | 0);
+    let wins = 0;
+    for (let k = 0; k < n; k++) {
+      const cards = rest.slice();
+      for (let i = cards.length - 1; i > 0; i--) { const j = Math.floor(rand() * (i + 1)); [cards[i], cards[j]] = [cards[j], cards[i]]; }
+      const hands = [[], [], [], []];
+      let ci = 0; for (let p = 0; p < 4; p++) hands[p] = p === seat ? hand.map(key) : cards.slice(ci, (ci += 10));
+      const re = isRe(hands);
+      const party = (p) => (re[p] ? 're' : 'contra');
+      let eyes = 0, turn = lead, cur = [], trickNo = 0;
+      while (trickNo < 10) {
+        const c = quickPolicy(hands[turn], cur, kind, party, turn, trickNo);
+        hands[turn].splice(hands[turn].indexOf(c), 1);
+        cur.push({ seat: turn, card: c });
+        turn = (turn + 1) % 4;
+        if (cur.length === 4) {
+          const led = followSuit(cur[0].card, kind);
+          let wi = 0, wp = power(cur[0].card, led, kind);
+          for (let i = 1; i < 4; i++) { const pw = power(cur[i].card, led, kind); if (pw > wp) { wp = pw; wi = i; } }
+          if (re[cur[wi].seat] === re[seat]) eyes += cur.reduce((x, q) => x + pts(q.card), 0);
+          turn = cur[wi].seat; cur = []; trickNo++;
+        }
+      }
+      if (eyes >= (re[seat] ? need : 120)) wins++;
+    }
+    return wins / n;
+  }
+
+  // Stärke im Normalspiel als Note 1–10: Vergleich mit vielen zufälligen Blättern (Dezile der Gewinnchance)
+  const ADVICE_DECILES = [0.34, 0.39, 0.44, 0.48, 0.53, 0.57, 0.65, 0.72, 0.82]; // gemessen an 400 zufälligen Blättern
+
+  function adviseHand(hand, seat, lead, n = 200) {
+    const seed = hand.join('').split('').reduce((a, ch) => (a * 31 + ch.charCodeAt(0)) | 0, 7) ^ (seat * 7919);
+    const cq = countCQ(hand);
+    const nT = countTrumps(hand);
+    const hi = hand.filter((c) => { const i = TRUMPS.normal.indexOf(key(c)); return i >= 0 && i < 5; }).map(key); // Herz 10 und Damen
+    const fehlAsse = hand.filter((c) => rankOf(c) === 'A' && !isTrump(c, 'normal')).length;
+    const fehl = ['C', 'S', 'H'].filter((su) => !hand.some((c) => suitOf(c) === su && !isTrump(c, 'normal')));
+    const fox = hand.filter((c) => key(c) === 'DA').length;
+    // Normalspiel mit Partner (bei zwei Kreuz-Damen: Hochzeit, Partner ist dann zufällig einer der anderen)
+    let hzRound = 0;
+    const normal = simulateHand(hand, seat, 'normal', lead, n, seed, (hs) => {
+      if (cq === 2) { const partner = (seat + 1 + (hzRound++ % 3)) % 4; return hs.map((_, p) => p === seat || p === partner); }
+      return hs.map((h, p) => (p === seat ? cq > 0 : h.includes('CQ')));
+    }, 121);
+    // bei zwei Kreuz-Damen zusätzlich: heimlich allein (stille Hochzeit)
+    const alone = cq === 2 ? simulateHand(hand, seat, 'normal', lead, n, seed + 1, (hs) => hs.map((_, p) => p === seat), 121) : null;
+    const solos = {};
+    for (const t of SOLOS) solos[t] = simulateHand(hand, seat, kindOf(t), lead, n, seed + t.length, (hs) => hs.map((_, p) => p === seat), 121);
+    let rating = 1; for (const d of ADVICE_DECILES) if (normal >= d) rating++;
+    return {
+      rating, normal, alone, solos, trumps: nT, hiTrumps: hi, fehlAsse, freeSuits: fehl, fox, cq,
+      hochzeit: cq === 2, armut: nT <= RULES.armutMaxTrumps, schmeissen: schmeissReason(hand),
+      sims: n,
+    };
   }
 
   function botDecl(g, seat) {
@@ -1182,7 +1246,7 @@ const DokoEngine = (() => {
   const euro = (pts) => (pts * RULES.centPerPoint / 100).toLocaleString('de-DE', { style: 'currency', currency: 'EUR' });
 
   return {
-    RULES, SOLOS, soloRank, reizMin, schmeissReason, viewFor, dispatch, botStep, botDelay, SUIT_SYM, SUIT_NAME, RANK_SHORT, TYPE_LABEL, DECL_LABEL, ANN_LABEL,
+    RULES, SOLOS, soloRank, reizMin, schmeissReason, adviseHand, viewFor, dispatch, botStep, botDelay, SUIT_SYM, SUIT_NAME, RANK_SHORT, TYPE_LABEL, DECL_LABEL, ANN_LABEL,
     newTable, apply, botAction, legalCards, sortHand, kindOf, isTrump, partyOf, knownParty,
     announceOptions, declOptions, scoreGame, totals, euro, soloCounts, cardName, pts, key, suitOf, rankOf, trickWinnerIdx, countTrumps,
   };

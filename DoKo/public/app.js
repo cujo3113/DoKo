@@ -1,7 +1,6 @@
 // Versionsnummer an den Dateinamen, damit Browser nie alte und neue Dateien mischen
-import E from './engine.js?v=34';
-import { CARD_DEFS, CARD_BODY } from './cards.js?v=34';
-import * as Advisor from './advisor.js?v=34';
+import E from './engine.js?v=35';
+import { CARD_DEFS, CARD_BODY } from './cards.js?v=35';
 
   const $ = (id) => document.getElementById(id);
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -868,95 +867,6 @@ import * as Advisor from './advisor.js?v=34';
     </div>`;
   }
 
-  // ---------- Ratgeber (nur eigene Karten, rechnet im eigenen Browser) ----------
-  // Nur sichtbar in Browsern, in denen er einmal mit ?ratgeber=1 freigeschaltet wurde (?ratgeber=aus entfernt ihn wieder).
-  // Andere Spieler sehen weder den Ratgeber noch einen Knopf dafür.
-  {
-    const p = params.get('ratgeber');
-    if (p !== null) {
-      if (p === 'aus' || p === '0') { try { localStorage.removeItem('doko-ratgeber'); } catch (e) {} }
-      else store.set('doko-ratgeber', '1');
-      const u = new URL(location.href); u.searchParams.delete('ratgeber');
-      try { history.replaceState(null, '', u.pathname + u.search + u.hash); } catch (e) {}
-    }
-  }
-  const advAllowed = () => store.get('doko-ratgeber') !== null;
-  let advOn = store.get('doko-ratgeber') === '1';
-  let advOpen = store.get('doko-ratgeber-details') === '1';
-  let adv = { sig: null, raw: null, progress: 0, cancel: null };
-  const pct = (x) => Math.round(x * 100) + ' %';
-  function advContext(g) {
-    const m = mySeat();
-    if (m < 0 || !g || !g.hands[m] || g.hands[m].length !== 10) return null;
-    const hand = g.hands[m];
-    const pos = (m - g.dealer - 1 + 8) % 4; // 0 = kommt raus, 3 = Geber
-    return { m, hand, pos, sig: `${g.dealId}|${m}|${pos}|${hand.map(E.key).sort().join('')}` };
-  }
-  function ensureAdvice(ctx) {
-    if (adv.sig === ctx.sig) return;
-    if (adv.cancel) adv.cancel();
-    const sig = ctx.sig;
-    adv = { sig, raw: null, progress: 0, cancel: null };
-    adv.cancel = Advisor.runAsync(ctx.hand, ctx.pos, (raw) => {
-      if (adv.sig !== sig) return;
-      adv.raw = raw; adv.cancel = null; renderFelt();
-    }, (f) => {
-      if (adv.sig !== sig) return;
-      adv.progress = f;
-      const el = $('advprog'); if (el) el.textContent = `rechnet … ${Math.round(f * 100)} %`;
-    });
-  }
-  function advSummary(g, ctx) {
-    if (!adv.raw) return null;
-    const open = typeof state.pflichtSoli === 'number' ? Math.max(0, state.pflichtSoli - ((state.soloCounts || [])[ctx.m] || 0)) : 0;
-    const why = (g.declOptions || []).includes('schmeissen') ? E.schmeissReason(ctx.hand) : null;
-    const armut = (g.declOptions || []).includes('armut');
-    return Advisor.summarize(ctx.hand, adv.raw, { bock: !!g.bock, pflichtOffen: open, schmeissen: why, armut });
-  }
-  function advisorHTML(g) {
-    const ctx = advContext(g);
-    if (!ctx || !advAllowed()) return '';
-    if (!advOn) return '<div class="adv off"><button class="mini" data-act="advtoggle">Ratgeber einblenden</button></div>';
-    ensureAdvice(ctx);
-    const head = (extra) => `<div class="adv-head"><span class="adv-label">Ratgeber</span><button class="mini" data-act="advtoggle">Ausblenden</button></div>${extra}`;
-    const s = advSummary(g, ctx);
-    if (!s) return `<div class="adv">${head(`<p class="muted small" id="advprog">rechnet … ${Math.round(adv.progress * 100)} %</p>`)}</div>`;
-    const r = s.rating;
-    const rows = s.solos.map((x) => {
-      const b = x.evals[x.best];
-      const hi = s.rec.kind === 'solo' && s.rec.type === x.type;
-      return `<tr class="${hi ? 'hi' : ''}"><td>${esc(x.name)}</td><td>${pct(x.evals[0].win)}</td><td>${x.best ? `${esc(Advisor.ABSAGE[x.best])} (${pct(b.win)})` : 'ohne Absage'}</td><td>${x.limit < 0 ? 'nicht spielen' : esc(Advisor.ABSAGE[x.limit])}</td></tr>`;
-    }).join('');
-    const normalRow = `<tr class="${s.rec.kind === 'normal' || s.rec.kind === 'hochzeit' ? 'hi' : ''}"><td>${adv.raw.hoch ? 'Hochzeit' : 'Normalspiel'}</td><td>${pct(s.normal.win)}</td><td>–</td><td>–</td></tr>`;
-    return `<div class="adv">
-      ${head(`<p class="adv-score" title="Blattwert fürs Normalspiel: besser als ${pct(r.pct)} aller Blätter">Blatt ${Math.round(r.pct * 100)}/100 · ${esc(r.word)}</p>`)}
-      <p class="adv-rec ${s.rec.kind}">${esc(s.rec.title)}</p>
-      <p class="muted small">${esc(s.rec.text)}</p>
-      ${s.notes.length ? `<ul class="adv-notes">${s.notes.map((n) => `<li>${esc(n)}</li>`).join('')}</ul>` : ''}
-      <details class="adv-more"${advOpen ? ' open' : ''}><summary>Alle Spielarten und Blattwert</summary>
-        <div class="adv-scroll"><table class="adv-table"><thead><tr><th>Spiel</th><th>Gewinnchance</th><th>Beste Absage</th><th>Reizgrenze</th></tr></thead><tbody>${rows}${normalRow}</tbody></table></div>
-        <p class="adv-factors">${r.factors.map(([t, x]) => `<span class="adv-f ${t === '+' ? 'p' : t === '−' ? 'm' : ''}">${esc(t)} ${esc(x)}</span>`).join('')}</p>
-        <p class="muted small">Richtwerte aus je ${Advisor.SIMS.toLocaleString('de-DE')} simulierten Spielen mit deinen Karten und zufällig verteilten übrigen Karten. Re/Kontra-Ansagen und Sonderpunkte sind nicht eingerechnet. Ein verlorenes Solo zählt dreifach – deshalb lohnt ein Solo ohne Absage erst ab etwa 80 %.</p>
-      </details></div>`;
-  }
-  // Reizen: lohnt die nötige Absage?
-  function advisorReizHTML(g, minLevel) {
-    const m = mySeat();
-    if (!advOn || !advAllowed() || m < 0 || !minLevel) return '';
-    const ctx = advContext(g);
-    if (!ctx || adv.sig !== ctx.sig) return '';
-    const s = advSummary(g, ctx);
-    const a = s && Advisor.reizAdvice(s, g.decl[m], minLevel);
-    if (!a) return '';
-    return `<div class="adv"><div class="adv-head"><span class="adv-label">Ratgeber</span></div>
-      <p class="adv-rec ${a.ok ? 'solo' : ''}">${a.ok ? `Erhöhen auf „${esc(Advisor.ABSAGE[minLevel])}“` : 'Passen'}</p>
-      <p class="muted small">Mit „${esc(Advisor.ABSAGE[minLevel])}“ gewinnst du dein ${esc(a.name)} zu ${pct(a.win)}. ${a.limit >= 1 ? `Deine Reizgrenze ist „${esc(Advisor.ABSAGE[a.limit])}“.` : 'Mit Absage lohnt sich dein Solo nicht.'}</p></div>`;
-  }
-  $('felt').addEventListener('toggle', (e) => {
-    if (!e.target.classList || !e.target.classList.contains('adv-more')) return;
-    advOpen = e.target.open; store.set('doko-ratgeber-details', advOpen ? '1' : '0');
-  }, true);
-
   function vorbehaltHTML(g) {
     const m = mySeat();
     const order = [1, 2, 3, 4].map((i) => (g.dealer + i) % 4);
@@ -988,12 +898,12 @@ import * as Advisor from './advisor.js?v=34';
       const nT = E.countTrumps(g.hands[m]);
       const b = (k, cls = '') => `<button class="btn ${cls}" data-decl="${k}"${k.startsWith('solo_') && k !== 'solo_trumpf' ? ` aria-pressed="${sortKind() === E.kindOf(k)}"` : ''}>${E.DECL_LABEL[k]}</button>`;
       const sk = sortKind();
-      return `<div class="panel"><h2>Gesund oder Vorbehalt?</h2>
+      return `<div class="panel"><h2>Gesund oder Vorbehalt?</h2>${Advisor.line()}
         <p class="muted">Du hast ${nT} Trümpfe${o.includes('hochzeit') ? ' und beide Kreuz-Damen. Sagst du gesund, spielst du eine stille Hochzeit' : ''}.</p>
         <div class="btnrow">${b('gesund', 'primary')}${o.includes('hochzeit') ? b('hochzeit') : ''}${o.includes('armut') ? b('armut') : ''}${o.includes('schmeissen') ? b('schmeissen', 'warn') : ''}</div>
         <div class="btnrow"><span class="muted">Solo:</span>${b('solo_trumpf')}${b('solo_damen')}${b('solo_buben')}${b('solo_koenige')}${sk !== 'normal' ? '<button class="btn ghost" data-sort="normal">Normal sortieren</button>' : ''}</div>
         <p class="muted">${sk !== 'normal' ? `Deine Karten sind nach ${esc((SORTS.find(([k]) => k === sk) || [])[1] || '')} sortiert.` : 'Ein Klick auf ein Solo ordnet deine Karten danach und fragt dann nach, ob du es spielen willst.'}</p>
-        <div class="btnrow">${status}</div>${advisorHTML(g)}</div>`;
+        <div class="btnrow">${status}</div></div>`;
     }
     const why = m >= 0 ? E.schmeissReason(g.hands[m]) : null;
     const throwBtn = why ? `<div class="btnrow"><button class="btn warn" data-decl="schmeissen">Schmeißen</button><span class="muted">Möglich, weil ${esc(why)}.</span></div>` : '';
@@ -1002,7 +912,7 @@ import * as Advisor from './advisor.js?v=34';
     const preview = m >= 0 && !g.decl[m] && g.hands[m].length
       ? `<div class="btnrow"><span class="muted">Solo ansehen:</span>${[['normal', 'Normal'], ['damen', 'Damensolo'], ['buben', 'Bubensolo'], ['koenige', 'Königssolo']].map(([k, l]) => `<button class="btn${k === 'normal' ? ' ghost' : ''}" data-sort="${k}" aria-pressed="${sk === k}"${k === 'normal' ? ' title="Normalspiel und Trumpfsolo sortieren gleich"' : ''}>${l}</button>`).join('')}</div>
         <p class="muted small">Das sortiert nur deine Karten. Ansagen kannst du, sobald du dran bist.</p>` : '';
-    return `<div class="panel"><h2>Vorbehalte</h2><p class="muted">${esc(seatName(g.turn))} ist dran.</p>${preview}${throwBtn}<div class="btnrow">${status}</div>${m >= 0 && !g.decl[m] ? advisorHTML(g) : ''}</div>`;
+    return `<div class="panel"><h2>Vorbehalte</h2><p class="muted">${esc(seatName(g.turn))} ist dran.</p>${Advisor.line()}${preview}${throwBtn}<div class="btnrow">${status}</div></div>`;
   }
 
   // Mehrere Soli: Überbotene dürfen mit einer Absage erhöhen
@@ -1017,7 +927,7 @@ import * as Advisor from './advisor.js?v=34';
       const btns = [1, 2, 3, 4].filter((L) => L >= r.min).map((L, i) => `<button class="btn${i === 0 ? ' primary' : ''}" data-reiz="${L}">${esc(ABS(L))}</button>`).join('');
       return `<div class="panel confirm"><h2>Du bist überboten</h2>
         <p class="muted">${r.raises ? 'Es wurde erhöht.' : 'Jemand hat ein höheres Solo angesagt.'} Um dein Solo zu spielen, musst du mindestens „${esc(ABS(r.min))}“ ansagen. Die Absage zählt wie jede andere: Schaffst du sie nicht, ist dein Solo verloren.</p>
-        <div class="btnrow">${btns}<button class="btn" data-reiz="0">Passen</button></div>${advisorReizHTML(g, r.min)}${stepsHTML}</div>`;
+        <div class="btnrow">${btns}<button class="btn" data-reiz="0">Passen</button></div>${stepsHTML}</div>`;
     }
     const who = esc(seatName(g.turn));
     let msg;
@@ -1115,6 +1025,92 @@ import * as Advisor from './advisor.js?v=34';
   let sortPref = { game: null, kind: 'normal' };
   const dealSig = () => (state && state.game ? state.game.dealId : null);
   const sortKind = () => (sortPref.game && sortPref.game === dealSig() ? sortPref.kind : 'normal');
+
+  // ---------- Ratgeber: Einschätzung der eigenen Karten, nur im eigenen Browser ----------
+  const Advisor = (() => {
+    let on = store.get('doko-ratgeber') === '1';
+    let cache = { id: null, adv: null, busy: false };
+    const btn = $('advbtn');
+    const pct = (x) => `${Math.round(x * 100)} %`;
+    const HI = { HT: 'Herz 10', CQ: 'Kreuz-Dame', SQ: 'Pik-Dame', HQ: 'Herz-Dame', DQ: 'Karo-Dame' };
+    const SUIT = { C: 'Kreuz', S: 'Pik', H: 'Herz' };
+    function renderBtn() {
+      btn.setAttribute('aria-pressed', String(on));
+      btn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-4 10.5c.7.7 1 1.5 1 2.5h6c0-1 .3-1.8 1-2.5A6 6 0 0 0 12 3z"/></svg>Ratgeber${on ? ' an' : ''}`;
+      btn.title = on ? 'Ratgeber ausschalten' : 'Ratgeber einschalten: Einschätzung deiner Karten, nur für dich sichtbar';
+    }
+    // Für welche Hand? Nur die eigene, solange noch alle 10 Karten da sind
+    function target() {
+      const g = state && state.game, m = mySeat();
+      if (!on || !g || m < 0 || g.phase === 'done') return null;
+      const h = g.hands[m];
+      if (!h || h.length !== 10 || h.some((c) => c === 'XX')) return cache.id === g.dealId ? { g, m, h: null } : null;
+      return { g, m, h };
+    }
+    function get() {
+      const t = target();
+      if (!t) return null;
+      if (cache.id === t.g.dealId) return cache.adv;
+      if (!t.h || cache.busy) return null;
+      cache = { id: null, adv: null, busy: true };
+      const id = t.g.dealId;
+      setTimeout(() => { // kurz verschoben, damit die Seite erst die Karten zeigt
+        try { cache = { id, adv: E.adviseHand(t.h, t.m, (t.g.dealer + 1) % 4), busy: false }; } catch (e) { cache = { id, adv: null, busy: false }; }
+        if (state && state.game && state.game.dealId === id) { renderFelt(); renderSide(); }
+      }, 60);
+      return null;
+    }
+    // Empfehlung in einem Satz
+    function verdict(a) {
+      const best = Object.entries(a.solos).sort((x, y) => y[1] - x[1])[0];
+      const label = E.DECL_LABEL[best[0]];
+      const parts = [];
+      if (a.schmeissen) parts.push(`Du darfst schmeißen (${a.schmeissen}).`);
+      if (best[1] >= 0.7) parts.push(`Solo lohnt sich: ${label} gewinnt ca. ${pct(best[1])}.`);
+      else if (best[1] >= 0.55) parts.push(`${label} wäre möglich, ist aber riskant (ca. ${pct(best[1])}). Ein verlorenes Solo zählt dreifach.`);
+      else if (a.hochzeit) parts.push(`Hochzeit ansagen (mit Partner ca. ${pct(a.normal)}) oder heimlich allein spielen (ca. ${pct(a.alone)})?`);
+      else if (a.armut) parts.push(`Wenig Trumpf: Trumpfabgabe ist möglich (${a.trumps} Trümpfe).`);
+      else parts.push(`Kein Solo, normal spielen. Gewinnchance ca. ${pct(a.normal)}.`);
+      const m = mySeat();
+      if (state.pflichtSoli && m >= 0 && (state.soloCounts[m] || 0) < state.pflichtSoli && best[1] < 0.7) {
+        const left = state.pflichtSoli - (state.soloCounts[m] || 0);
+        parts.push(`Dir ${left === 1 ? 'fehlt noch 1 Pflichtsolo' : `fehlen noch ${left} Pflichtsoli`}. Am ehesten passt ${label} (ca. ${pct(best[1])}).`);
+      }
+      return parts.join(' ');
+    }
+    // Eine Zeile im Vorbehaltsfeld (auch am Handy sichtbar)
+    function line() {
+      const t = target(); if (!t) return '';
+      const a = get();
+      return `<p class="advline"><strong>Ratgeber:</strong> ${a ? esc(verdict(a)) : 'rechnet …'}</p>`;
+    }
+    // Kasten in der Seitenleiste
+    function box() {
+      const t = target(); if (!t) return '';
+      const a = get();
+      if (!a) return '<div class="box adv"><h3>Ratgeber <small>nur für dich</small></h3><p class="muted">Rechnet Probespiele …</p></div>';
+      const hi = a.hiTrumps.map((k) => HI[k]).join(', ');
+      const facts = [
+        `${a.trumps} ${a.trumps === 1 ? 'Trumpf' : 'Trümpfe'}${a.hiTrumps.length ? `, davon ${a.hiTrumps.length} ${a.hiTrumps.length === 1 ? 'hoher' : 'hohe'} (${hi})` : ', keine hohen (Herz 10, Damen)'}`,
+        a.fehlAsse ? `${a.fehlAsse} Fehl-${a.fehlAsse === 1 ? 'Ass' : 'Asse'}` : 'keine Fehl-Asse',
+        a.freeSuits.length ? `frei in ${a.freeSuits.map((x) => SUIT[x]).join(', ')}` : null,
+        a.fox ? `${a.fox === 2 ? 'beide Füchse' : 'Fuchs (Karo Ass)'} auf der Hand` : null,
+      ].filter(Boolean);
+      const bar = (x) => `<span class="advbar"><span style="width:${Math.round(x * 100)}%"></span></span>`;
+      const cls = (x) => (x >= 0.7 ? 'good' : x >= 0.55 ? 'mid' : 'low');
+      const rows = E.SOLOS.map((k) => `<tr class="${cls(a.solos[k])}"><td>${E.DECL_LABEL[k]}</td><td>${bar(a.solos[k])}</td><td class="num">${pct(a.solos[k])}</td></tr>`).join('');
+      const playing = t.g.phase === 'play';
+      return `<div class="box adv"><h3>Ratgeber <small>nur für dich${playing ? ' · Stand Spielbeginn' : ''}</small></h3>
+        <div class="advscore"><span class="note">${a.rating}<small>/10</small></span><span><strong>Blatt im Normalspiel</strong><br>${a.hochzeit ? `als Hochzeit ca. ${pct(a.normal)}, heimlich allein ca. ${pct(a.alone)}` : `Gewinnchance ca. ${pct(a.normal)}`}</span></div>
+        <p class="advfacts">${facts.map(esc).join(' · ')}</p>
+        <table class="advsolo"><caption>Gewinnchance als Solo</caption>${rows}</table>
+        <p class="advverdict">${esc(verdict(a))}</p>
+        <p class="muted small">Grobe Schätzung aus je ${a.sims} Probespielen mit zufällig verteilten übrigen Karten. Die Note vergleicht dein Blatt mit vielen zufälligen Blättern (10 = besser als 90 %). Nur du siehst das.</p></div>`;
+    }
+    btn.addEventListener('click', () => { on = !on; store.set('doko-ratgeber', on ? '1' : '0'); renderBtn(); renderFelt(); renderSide(); });
+    renderBtn();
+    return { line, box };
+  })();
   function handHTML(g) {
     const m = mySeat();
     if (!g || m < 0 || !g.hands[m].length) return '';
@@ -1239,7 +1235,7 @@ import * as Advisor from './advisor.js?v=34';
         : `<button class="sidebtn" data-act="askreset"${readOnly || m < 0 ? ' disabled' : ''}>Partie beenden</button>${m < 0 ? '<span class="notice">nur für Spieler am Tisch</span>' : ''}`;
     } else if (state.phase === 'ended') reset = `<button class="sidebtn" data-act="reset"${readOnly ? ' disabled' : ''}>Neue Partie starten</button>`;
     const n2 = $('nick2'); const keep2 = n2 ? { v: n2.value, f: document.activeElement === n2 } : null;
-    side.innerHTML = `
+    side.innerHTML = `${Advisor.box()}
       <div class="box"><h3>Dieses Spiel</h3>${info}
         <div class="btnrow">${m >= 0 && state.phase === 'game' ? `<button class="sidebtn" data-leave="${m}">Platz an Bot abgeben</button>` : ''}</div></div>
       <div class="box"><h3>Spielzettel <small>${state.games.length ? state.games.length + (state.games.length === 1 ? ' Spiel' : ' Spiele') + ' · Verliererpunkte' : ''}</small></h3><div class="zettel" id="zettel">${zettel}</div>${state.games.length ? '<div class="btnrow"><button class="sidebtn" data-act="pdf">Spielzettel als PDF</button></div>' : ''}</div>
@@ -1247,9 +1243,10 @@ import * as Advisor from './advisor.js?v=34';
       <div class="box"><h3>${logTitle}</h3><ul class="log">${logItems || '<li>Noch nichts passiert.</li>'}</ul></div>
       <div class="box"><details class="rules"><summary>Hausregeln in dieser App</summary><ul>
         <li>40 Karten ohne Neunen, 10 pro Spieler. Trumpf: Herz 10, Damen, Buben, Karo Ass, 10, König. Bei zwei gleichen Karten sticht die erste.</li>
-        <li>Soli: Trumpfsolo (Karo-Solo), Damensolo, Bubensolo, Königssolo. Ein Solo hat Vorrang vor Hochzeit und Trumpfabgabe, und es spielt wie immer der Spieler links vom Geber aus.</li>
+        <li>Soli: Trumpfsolo (Karo-Solo), Damensolo, Bubensolo, Königssolo. Ein Solo hat Vorrang vor Trumpfabgabe und Hochzeit, und es spielt wie immer der Spieler links vom Geber aus. Gibt es Trumpfabgabe und Hochzeit gleichzeitig, geht die Trumpfabgabe vor.</li>
         <li>Mehrere Soli: Es gilt Trumpf vor Damen vor Buben vor Königen, bei gleichem Solo spielt, wer näher links vom Geber sitzt. Danach wird gereizt: Wer überboten ist, kann mit einer Absage (keine 90 bis schwarz) erhöhen oder passen. Eine höhere Absage schlägt jedes Solo mit niedrigerer Absage, ein Königssolo mit „keine 90“ also ein Trumpfsolo ohne Absage. Dann darf der andere nachziehen, bis nur einer übrig ist. Die Absage zählt wie jede andere. Welches Solo die anderen wollten, bleibt geheim.</li>
         <li>Vorsortieren: Bei der Vorbehaltsabfrage ordnet ein Klick auf ein Solo deine Karten danach. Solange du noch nicht dran bist, ist das nur eine Vorschau. Bist du dran, folgt die Rückfrage, ob du das Solo wirklich spielst.</li>
+        <li>Ratgeber: Mit dem Knopf „Ratgeber“ oben schätzt die App dein Blatt ein (Note 1–10, Gewinnchance im Normalspiel und als Solo). Das rechnet nur dein eigener Browser mit deinen eigenen Karten, die anderen sehen es nicht. Jeder kann ihn für sich einschalten.</li>
         <li>Archiv: Die letzten fünf beendeten Partien stehen mit ihrem Spielzettel in der Seitenleiste unter „Archiv“, auch als PDF.</li>
         <li>Schmeißen: Ist dein höchster Trumpf kleiner als der Karo-Bube (oder hast du gar keinen Trumpf) oder hast du mindestens 5 Könige, kannst du während der Vorbehaltsabfrage jederzeit schmeißen. Derselbe Geber gibt neu, das Spiel zählt nicht.</li>
         <li>Hochzeit: Der erste fremde Fehlstich (Fehlfarbe ausgespielt, ein anderer gewinnt) in den ersten drei Stichen macht dessen Gewinner zum Partner. Trumpfstiche zählen nicht. Klappt das nicht, spielt die Hochzeit ein Solo.</li>
@@ -1412,7 +1409,6 @@ import * as Advisor from './advisor.js?v=34';
       case 'armutGive': return act({ t: 'armutGive', cards: selected.slice() });
       case 'armutReturn': return act({ t: 'armutReturn', cards: selected.slice() });
       case 'cancelsolo': pendingSolo = null; return renderFelt();
-      case 'advtoggle': advOn = !advOn; store.set('doko-ratgeber', advOn ? '1' : '0'); return renderFelt();
       case 'lasttrick': showLast = !showLast; return renderFelt();
       case 'pdf': return downloadPdf();
       case 'editname': { const e = $('nick2'); if (e) { e.focus(); e.select(); e.scrollIntoView({ block: 'center', behavior: 'smooth' }); } return; }
