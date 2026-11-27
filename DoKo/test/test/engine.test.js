@@ -17,6 +17,8 @@ function playOut(state, hook) {
 function table() {
   let s = E.newTable();
   s = run(s, { seat: 0, a: { t: 'fillBots' } });
+  s = run(s, { seat: 0, a: { t: 'pflicht', n: 0 } });
+  s = run(s, { seat: 0, a: { t: 'augen', on: true } });
   return s;
 }
 
@@ -194,6 +196,8 @@ console.log('Stille Hochzeit:', s.game.result.points);
   let x = E.newTable();
   x = E.dispatch(x, U, { t: 'sit', seat: 0, name: 'Solist' }).state;
   x = E.dispatch(x, U, { t: 'fillBots' }).state;
+  x = E.dispatch(x, U, { t: 'pflicht', n: 0 }).state;
+  x = E.dispatch(x, U, { t: 'augen', on: true }).state;
   x = E.apply(x, 0, { t: 'start', hands }).state;
   for (const p of [0, 1, 2, 3]) x = E.apply(x, p, { t: 'decl', choice: 'gesund' }).state;
   const seen = () => [E.viewFor(x, U), E.viewFor(x, 'niemand')].map((v) => [v.game.stille, v.game.soloist]);
@@ -228,6 +232,72 @@ s = run(s, { seat: 1, a: { t: 'decl', choice: 'gesund' } });
 s = run(s, { seat: 2, a: { t: 'decl', choice: 'solo_buben' } });
 s = run(s, { seat: 3, a: { t: 'decl', choice: 'gesund' } });
 assert.strictEqual(s.game.type, 'solo_buben'); assert.strictEqual(s.game.turn, 0); // normale Reihenfolge
+
+// Mehrere Soli: Rangfolge Trumpf > Damen > Buben > Könige, dann Reizen mit Absagen
+{
+  const solos = (decls) => {
+    let x = table(); x = run(x, { seat: 0, a: { t: 'start', hands } });
+    decls.forEach((choice, seat) => { x = run(x, { seat, a: { t: 'decl', choice } }); });
+    return x;
+  };
+  const reiz = (x, seat, level) => run(x, { seat, a: { t: 'reizen', level } });
+  // nur ein Solo: kein Reizen
+  let x = solos(['hochzeit', 'solo_koenige', 'gesund', 'gesund']);
+  assert.strictEqual(x.game.phase, 'play'); assert.strictEqual(x.game.soloist, 1); assert.strictEqual(x.game.ann.re, 0);
+  // Königssolo (Platz 0) gegen Trumpfsolo (Platz 1): Platz 0 ist überboten und darf erhöhen
+  x = solos(['solo_koenige', 'solo_trumpf', 'gesund', 'gesund']);
+  assert.strictEqual(x.game.phase, 'reizen'); assert.strictEqual(x.game.turn, 0);
+  assert.strictEqual(E.reizMin(x.game, 0), 1, 'Könige brauchen keine 90');
+  assert.ok(E.apply(x, 1, { t: 'reizen', level: 1 }).error, 'der Führende ist nicht dran');
+  assert.ok(E.apply(x, 0, { t: 'reizen', level: 5 }).error);
+  x = reiz(x, 0, 1);                                   // Könige keine 90
+  assert.strictEqual(x.game.turn, 1); assert.strictEqual(E.reizMin(x.game, 1), 1, 'Trumpf hält mit keine 90');
+  x = reiz(x, 1, 1);                                   // Trumpf keine 90
+  assert.strictEqual(x.game.turn, 0); assert.strictEqual(E.reizMin(x.game, 0), 2);
+  x = reiz(x, 0, 0);                                   // Könige passt
+  assert.strictEqual(x.game.phase, 'play'); assert.strictEqual(x.game.type, 'solo_trumpf'); assert.strictEqual(x.game.soloist, 1);
+  assert.strictEqual(x.game.ann.re, 2); assert.ok(x.game.ann.hist[0].reizen);
+  assert.ok(x.log.includes('Platz 1 erhöht: keine 90.') || x.log.some((l) => /erhöht: keine 90\./.test(l)));
+  assert.ok(x.log.some((l) => /spielt Trumpfsolo mit keine 90\./.test(l)));
+  assert.deepStrictEqual(E.announceOptions(x.game, 1), [3, 4, 5], 'weitere Absagen ab keine 60');
+  assert.deepStrictEqual(E.announceOptions(x.game, 0), [1, 2, 3, 4, 5], 'Kontra bleibt möglich');
+  x = playOut(x); assert.strictEqual(x.game.result.ann.re, 2);
+  // Überbotener passt sofort: höheres Solo spielt ohne Absage
+  x = solos(['solo_buben', 'gesund', 'solo_damen', 'gesund']);
+  assert.strictEqual(x.game.turn, 0); x = reiz(x, 0, 0);
+  assert.strictEqual(x.game.soloist, 2); assert.strictEqual(x.game.ann.re, 0);
+  // Gleiches Solo: wer näher links vom Geber sitzt, führt; der andere braucht keine 90, der erste hält mit keine 90
+  x = solos(['gesund', 'solo_damen', 'gesund', 'solo_damen']);
+  assert.strictEqual(x.game.turn, 3); assert.strictEqual(E.reizMin(x.game, 3), 1);
+  x = reiz(x, 3, 1); assert.strictEqual(x.game.turn, 1); assert.strictEqual(E.reizMin(x.game, 1), 1, 'Gleichstand hält');
+  x = reiz(x, 1, 1); x = reiz(x, 3, 3);               // Platz 3 springt auf keine 30
+  assert.strictEqual(x.game.turn, 1); assert.strictEqual(E.reizMin(x.game, 1), 3);
+  x = reiz(x, 1, 4);                                   // schwarz
+  assert.strictEqual(x.game.phase, 'play', 'Platz 3 kann schwarz nicht mehr überbieten');
+  assert.strictEqual(x.game.soloist, 1); assert.strictEqual(x.game.ann.re, 5);
+  assert.ok(x.log.some((l) => /kann nicht mehr erhöhen/.test(l)));
+  // Drei Soli
+  x = solos(['solo_koenige', 'solo_buben', 'solo_trumpf', 'gesund']);
+  assert.strictEqual(x.game.turn, 0); x = reiz(x, 0, 0);
+  assert.strictEqual(x.game.turn, 1); x = reiz(x, 1, 1);
+  assert.strictEqual(x.game.turn, 2); x = reiz(x, 2, 0);
+  assert.strictEqual(x.game.soloist, 1); assert.strictEqual(x.game.type, 'solo_buben');
+  // Geheim: Solo-Arten bleiben verdeckt, nur der Dran-Seiende sieht seine Mindest-Absage
+  let y = table(); y.seats[0] = { uid: 'U0', name: 'A', bot: false }; y.seats[1] = { uid: 'U1', name: 'B', bot: false };
+  y = run(y, { seat: 0, a: { t: 'start', hands } });
+  y = run(y, { seat: 0, a: { t: 'decl', choice: 'solo_koenige' } }); y = run(y, { seat: 1, a: { t: 'decl', choice: 'solo_trumpf' } });
+  y = run(y, { seat: 2, a: { t: 'decl', choice: 'gesund' } }); y = run(y, { seat: 3, a: { t: 'decl', choice: 'gesund' } });
+  const v0 = E.viewFor(y, 'U0'), v1 = E.viewFor(y, 'U1');
+  assert.strictEqual(v0.game.reizen.min, 1); assert.strictEqual(v1.game.reizen.min, null); assert.strictEqual(v1.game.reizen.leading, true);
+  assert.strictEqual(v1.game.decl[0], 'vorbehalt'); assert.strictEqual(v0.game.decl[1], 'vorbehalt');
+  assert.ok(!JSON.stringify(v0).includes('solo_trumpf') && !JSON.stringify(v1).includes('solo_koenige'));
+  // Bots reizen selbständig bis zum Ende
+  let z = table(); z = run(z, { seat: 0, a: { t: 'start', hands } });
+  for (const [seat, choice] of [[0, 'solo_damen'], [1, 'solo_buben'], [2, 'solo_trumpf'], [3, 'gesund']]) z = run(z, { seat, a: { t: 'decl', choice } });
+  for (let i = 0; i < 20 && z.game.phase === 'reizen'; i++) z = E.botStep(z);
+  assert.strictEqual(z.game.phase, 'play');
+  console.log('Soli reizen: ok');
+}
 
 // Hochzeit: fremde Trumpfstiche zählen nicht, nach 3 Stichen ohne fremden Fehlstich -> Solo
 function hz() { let x = table(); x = run(x, { seat: 0, a: { t: 'start', hands } }); x = run(x, { seat: 0, a: { t: 'decl', choice: 'hochzeit' } }); for (const p of [1, 2, 3]) x = run(x, { seat: p, a: { t: 'decl', choice: 'gesund' } }); return x; }
@@ -319,7 +389,160 @@ g = mk([0, 2]); g.tricks = tricksFor([0, 2], 125, 115);
 g.tricks[9] = { cards: [{ seat: 0, card: 'DK0' }, { seat: 1, card: 'DA0' }, { seat: 2, card: 'DK1' }, { seat: 3, card: 'SK1' }], winner: 1, points: g.tricks[9].points };
 g.tricks[8] = { cards: [{ seat: 0, card: 'DA1' }, { seat: 1, card: 'SK0' }, { seat: 2, card: 'CK0' }, { seat: 3, card: 'CK1' }], winner: 1, points: g.tricks[8].points };
 r = E.scoreGame(g); assert.ok(r.nullspiel); assert.deepStrictEqual(r.bockEvents, ['Nullspiel']);
+// Augen-Anzeige: vor der Partie abfragen, zwischen Spielen umstellbar, bei „aus“ keine Stich-Augen im View
+{
+  let x = E.newTable();
+  const U = 'AUGENTEST000000000000';
+  x = E.dispatch(x, U, { t: 'sit', seat: 0, name: 'A' }).state;
+  x = run(x, { seat: 0, a: { t: 'fillBots' } });
+  x = run(x, { seat: 0, a: { t: 'pflicht', n: 0 } });
+  assert.strictEqual(E.viewFor(x, U).augen, null);
+  assert.match(E.apply(x, 0, { t: 'start' }).error, /Augen/, 'ohne Angabe kein Start');
+  assert.ok(E.apply(x, 0, { t: 'augen', on: 'ja' }).error);
+  assert.ok(E.dispatch(x, 'FREMDER0000000000000X', { t: 'augen', on: false }).error, 'nur Spieler am Tisch');
+  x = run(x, { seat: 0, a: { t: 'augen', on: false } });
+  x = run(x, { seat: 0, a: { t: 'start' } });
+  assert.ok(E.apply(x, 0, { t: 'augen', on: true }).error, 'nicht mitten im Spiel');
+  for (const p of [0, 1, 2, 3]) if (x.game.phase === 'vorbehalt') x = run(x, { seat: x.game.turn, a: { t: 'decl', choice: 'gesund' } });
+  while (x.game.phase === 'play' && x.game.tricks.length < 2) x = E.botStep(x) || run(x, { seat: x.game.turn, a: { t: 'play', card: E.legalCards(x.game.hands[x.game.turn], x.game.current, E.kindOf(x.game.type))[0] } });
+  let v = E.viewFor(x, U);
+  assert.strictEqual(v.augen, false); assert.ok(v.game.tricks.length >= 2 && v.game.tricks.every((t) => t.points === null), 'keine Augen im View');
+  assert.ok(x.game.tricks.every((t) => typeof t.points === 'number'), 'intern wird weiter gezählt');
+  x = playOut(x);
+  v = E.viewFor(x, U);
+  assert.ok(v.game.tricks.every((t) => typeof t.points === 'number'), 'nach dem Spiel sind die Augen sichtbar');
+  assert.strictEqual(v.game.result.eyes.re + v.game.result.eyes.contra, 240);
+  x = run(x, { seat: 0, a: { t: 'augen', on: true } });
+  assert.strictEqual(x.augen, true, 'zwischen zwei Spielen umstellbar');
+  x = run(x, { seat: 0, a: { t: 'reset', keepSeats: true } });
+  assert.strictEqual(x.augen, null, 'neue Partie fragt neu');
+  // alte Partie ohne Einstellung: Augen sichtbar
+  const old = run(table(), { seat: 0, a: { t: 'start' } }); delete old.augen;
+  assert.strictEqual(E.viewFor(old, U).augen, true);
+  console.log('Augen-Anzeige: ok');
+}
+
+// Archiv der letzten Spielzettel
+{
+  const partie = (x, n) => {
+    for (let i = 0; i < n; i++) {
+      x = run(x, { seat: 0, a: i === 0 && x.phase === 'lobby' ? { t: 'start', hands } : { t: 'next' } });
+      for (let k = 0; k < 4 && x.game.phase === 'vorbehalt'; k++) x = run(x, { seat: x.game.turn, a: { t: 'decl', choice: 'gesund' } });
+      x = playOut(x);
+    }
+    return x;
+  };
+  let x = partie(table(), 2);
+  assert.ok(x.startedAt > 0);
+  x = run(x, { seat: 0, a: { t: 'endPartie' } });
+  assert.strictEqual(x.archive.length, 1);
+  const z = x.archive[0];
+  assert.strictEqual(z.games.length, 2); assert.deepStrictEqual(Object.keys(z.games[0]).sort(), ['bock', 'label', 'no', 'points']);
+  assert.deepStrictEqual(z.games.map((g) => g.points), x.games.map((g) => g.points));
+  assert.strictEqual(z.names.length, 4); assert.ok(z.ended >= z.started);
+  x = run(x, { seat: 0, a: { t: 'reset', keepSeats: true } });
+  assert.strictEqual(x.archive.length, 1, 'kein doppelter Eintrag nach „Neue Partie“');
+  assert.strictEqual(x.games.length, 0); assert.ok(!x.archived && !x.startedAt);
+  x = run(x, { seat: 0, a: { t: 'reset', keepSeats: true } });
+  assert.strictEqual(x.archive.length, 1, 'leere Partie kommt nicht ins Archiv');
+  // Partie ohne „Partie beenden“, direkt neu gestartet: landet trotzdem im Archiv
+  x = run(x, { seat: 0, a: { t: 'pflicht', n: 0 } }); x = run(x, { seat: 0, a: { t: 'augen', on: true } });
+  x = partie(x, 1);
+  x = run(x, { seat: 0, a: { t: 'reset', keepSeats: true } });
+  assert.strictEqual(x.archive.length, 2);
+  // nur die letzten fünf bleiben, die neueste steht hinten
+  for (let i = 0; i < 5; i++) {
+    x = run(x, { seat: 0, a: { t: 'pflicht', n: 0 } }); x = run(x, { seat: 0, a: { t: 'augen', on: true } });
+    x = partie(x, 1); x = run(x, { seat: 0, a: { t: 'endPartie' } }); x = run(x, { seat: 0, a: { t: 'reset', keepSeats: true } });
+  }
+  assert.strictEqual(x.archive.length, 5);
+  assert.ok(x.archive.every((e, i, A) => i === 0 || A[i - 1].ended <= e.ended));
+  assert.strictEqual(E.viewFor(x, null).archive.length, 5);
+  assert.ok(JSON.stringify(x.archive).length < 20000, 'Archiv bleibt klein');
+  console.log('Archiv: ok');
+}
+
+// Ratgeber: Einschätzung nur aus der eigenen Hand
+{
+  const strong = ['CQ0', 'CQ1', 'SQ0', 'SQ1', 'HQ0', 'HQ1', 'CA0', 'SA0', 'HA0', 'DA0'];
+  const a = E.adviseHand(strong, 0, 1);
+  assert.ok(a.solos.solo_damen >= 0.85, 'Damensolo-Blatt erkannt: ' + a.solos.solo_damen);
+  assert.ok(a.solos.solo_damen > a.solos.solo_buben && a.solos.solo_damen > a.solos.solo_koenige);
+  assert.ok(a.hochzeit && a.rating >= 8);
+  const weak = ['CK0', 'CK1', 'SK0', 'ST0', 'HK0', 'CT0', 'ST1', 'HK1', 'DK0', 'SA1'];
+  const b = E.adviseHand(weak, 2, 1);
+  assert.ok(b.armut && b.rating <= 3 && b.normal < 0.4, JSON.stringify(b));
+  assert.ok(Object.values(b.solos).every((x) => x >= 0 && x <= 1));
+  assert.deepStrictEqual(E.adviseHand(strong, 0, 1), a, 'gleiche Hand, gleiches Ergebnis');
+  console.log('Ratgeber: ok');
+}
+
+// Trumpfabgabe geht vor Hochzeit, Solo vor beiden
+{
+  const H = [
+    ['CQ0', 'CQ1', 'SQ0', 'SQ1', 'HQ0', 'HQ1', 'DQ0', 'DQ1', 'CJ0', 'CJ1'],
+    ['CA0', 'CA1', 'CT0', 'CT1', 'CK0', 'CK1', 'SA0', 'DK0', 'DK1', 'DA0'],
+    ['SA1', 'ST0', 'ST1', 'SK0', 'SK1', 'HA0', 'HA1', 'HK0', 'HK1', 'DT0'],
+    ['HT0', 'HT1', 'SJ0', 'SJ1', 'HJ0', 'HJ1', 'DJ0', 'DJ1', 'DT1', 'DA1'],
+  ];
+  const go = (decls) => {
+    let x = run(table(), { seat: 0, a: { t: 'start', hands: H } });
+    decls.forEach((choice, seat) => { x = run(x, { seat, a: { t: 'decl', choice } }); });
+    return x;
+  };
+  let x = go(['hochzeit', 'armut', 'gesund', 'gesund']);
+  assert.strictEqual(x.game.type, 'armut'); assert.strictEqual(x.game.phase, 'armut_give'); assert.strictEqual(x.game.turn, 1);
+  assert.ok(x.log.some((l) => /Trumpfabgabe\. Sie geht vor der Hochzeit\./.test(l)));
+  x = go(['hochzeit', 'gesund', 'gesund', 'gesund']);
+  assert.strictEqual(x.game.type, 'hochzeit');
+  x = go(['hochzeit', 'armut', 'gesund', 'solo_buben']);
+  assert.strictEqual(x.game.type, 'solo_buben');
+  console.log('Trumpfabgabe vor Hochzeit: ok');
+}
+
 // Herz-Stich in stiller Hochzeit zählt für Bock
 g = mk([3], { stille: true, soloist: 3 }); g.tricks = tricksFor([3], 130, 110, 4); g.tricks[2] = herz;
 r = E.scoreGame(g); assert.strictEqual(r.bockAdded, 4);
+// Pflichtsoli: gezählt werden angesagte Soli, stille Hochzeit und Hochzeit ohne Partner
+{
+  let x = table();
+  assert.ok(E.apply(x, 0, { t: 'pflicht', n: 7 }).error);
+  x = run(x, { seat: 0, a: { t: 'pflicht', n: 2 } });
+  x = run(x, { seat: 0, a: { t: 'start' } });
+  assert.ok(E.apply(x, 0, { t: 'pflicht', n: 1 }).error, 'während der Partie nicht mehr änderbar');
+  {
+    // mitten im Spiel beenden: laufendes Spiel zählt nicht, Pflichtsoli werden abgerechnet
+    const y = run(x, { seat: 0, a: { t: 'endPartie' } });
+    assert.strictEqual(y.phase, 'ended'); assert.strictEqual(y.game, null);
+    assert.strictEqual(y.games.length, 1); assert.ok(y.games[0].pflicht); assert.deepStrictEqual(y.games[0].points, [200, 200, 200, 200]);
+    assert.ok(y.log.some((l) => /^Spiel 1 abgebrochen/.test(l)));
+    assert.strictEqual(E.botStep(y), null, 'Bots spielen danach nicht weiter');
+  }
+  x.games = [
+    { no: 1, label: 'Damensolo', solo: true, soloist: 1, soloSeat: 1, points: [8, 0, 8, 8] },
+    { no: 2, label: 'Stille Hochzeit', solo: true, soloist: 3, soloSeat: 3, points: [0, 0, 0, 36] },
+    { no: 3, label: 'Hochzeit (Solo)', solo: true, soloist: null, soloSeat: 0, points: [0, 8, 8, 8] },
+    { no: 4, label: 'Trumpfsolo', solo: true, soloist: 1, soloSeat: 1, points: [8, 0, 8, 8] },
+    { no: 5, label: 'Normalspiel', solo: false, soloist: null, points: [1, 0, 1, 0] },
+  ];
+  assert.deepStrictEqual(E.soloCounts(x), [1, 2, 0, 1]);
+  x.game.phase = 'done';
+  x = run(x, { seat: 0, a: { t: 'endPartie' } });
+  const pen = x.games[x.games.length - 1];
+  assert.ok(pen.pflicht); assert.deepStrictEqual(pen.points, [100, 0, 200, 100]);
+  assert.strictEqual(x.phase, 'ended'); assert.strictEqual(x.game, null);
+  assert.deepStrictEqual(E.totals(x), [117, 8, 225, 160]);
+  assert.ok(E.apply(x, 0, { t: 'next' }).error, 'nach dem Ende kein weiteres Spiel');
+  x = run(x, { seat: 0, a: { t: 'reset', keepSeats: true } });
+  assert.strictEqual(x.phase, 'lobby'); assert.strictEqual(x.pflichtSoli, null); assert.strictEqual(x.games.length, 0);
+  // Hochzeit ohne Partner wird beim Abrechnen dem Spieler mit der Hochzeit als Solo gutgeschrieben
+  let y = table(); y = run(y, { seat: 0, a: { t: 'start', hands } });
+  y = run(y, { seat: 0, a: { t: 'decl', choice: 'hochzeit' } }); for (const p of [1, 2, 3]) y = run(y, { seat: p, a: { t: 'decl', choice: 'gesund' } });
+  y = plays(y, [[0, 'SQ0'], [1, 'HT1'], [2, 'DQ1'], [3, 'DT1']]);
+  y = plays(y, [[1, 'HQ0'], [2, 'CJ1'], [3, 'DK1'], [0, 'DJ0']]);
+  y = plays(y, [[1, 'HQ1'], [2, 'SJ1'], [3, 'CT1'], [0, 'CQ0']]);
+  y = playOut(y);
+  assert.strictEqual(y.games[y.games.length - 1].soloSeat, 0); assert.deepStrictEqual(E.soloCounts(y), [1, 0, 0, 0]);
+  console.log('Pflichtsoli: ok');
+}
 console.log('Alle Tests bestanden.');
