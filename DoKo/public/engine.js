@@ -341,8 +341,9 @@ const DokoEngine = (() => {
       if (L[op] === 4) return eyes[me] >= 30;
       if (L[op] === 3) return eyes[me] >= 60;
       if (L[op] === 2) return eyes[me] >= 90;
-      if (me === 're') return eyes.re >= ((L.contra >= 1 && L.re === 0) ? 120 : 121);
-      return eyes.contra >= ((L.re >= 1 && L.contra === 0) ? 121 : 120);
+      // Hausregel: bei 120:120 gewinnt immer Kontra, auch wenn nur Kontra angesagt hat
+      if (me === 're') return eyes.re >= 121;
+      return eyes.contra >= 120;
     };
     const reMet = met('re'), coMet = met('contra');
     const winner = reMet && !coMet ? 're' : coMet && !reMet ? 'contra' : null;
