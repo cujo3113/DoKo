@@ -77,6 +77,12 @@ ex('B Kontra gewinnt, Re angesagt', g, [4, 0, 4, 0]);
 // C 120:120 ohne Ansage -> Kontra gewinnt (gewonnen + gegen die Alten) = 2
 g = mk([0, 2]); g.tricks = tricksFor([0, 2], 120, 120, 5);
 ex('C 120:120', g, [2, 0, 2, 0]);
+// C2 120:120, nur Kontra angesagt -> Kontra gewinnt trotzdem: (gewonnen + gegen die Alten) x2 = 4
+g = mk([0, 2], { ann: { re: 0, contra: 1, hist: [] } }); g.tricks = tricksFor([0, 2], 120, 120, 5);
+ex('C2 120:120 nur Kontra angesagt', g, [4, 0, 4, 0]);
+// C3 120:120, Re und Kontra angesagt -> Kontra gewinnt: 2 x2 x2 = 8
+g = mk([0, 2], { ann: { re: 1, contra: 1, hist: [] } }); g.tricks = tricksFor([0, 2], 120, 120, 5);
+ex('C3 120:120 Re und Kontra angesagt', g, [8, 0, 8, 0]);
 // D Re + Kontra + keine 90 (Re), Re 190:50; Doppelkopf Re, Fuchs gefangen Kontra
 //   gewonnen 1, keine 90 1, keine 60 1, keine 90 angesagt 1 = 4; Sonderpunkte 1:1 -> 4; x4 = 16
 g = mk([0, 2], { ann: { re: 2, contra: 1, hist: [] } }); g.tricks = tricksFor([0, 2], 190, 50, 7);
